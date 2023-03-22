@@ -1,0 +1,58 @@
+Perf/BM library
+
+TODO: check rdtscp instruction
+You can check this with sudo dmesg | grep tsc and it'll print the TSC
+frequency and the actual CPU frequency
+
+NOTE: rdtsc counts reference cycles, not CPU core cycles
+
+TODO: check that BM instructions aren't being optimized away?
+
+TODO: read https://stackoverflow.com/questions/51818655/clflush-to-invalidate-cache-line-via-c-function/51830976#51830976
+and https://stackoverflow.com/questions/13772567/how-to-get-the-cpu-cycle-count-in-x86-64-from-c/51907627#51907627
+and https://stackoverflow.com/questions/38552116/how-to-remove-noise-from-gcc-clang-assembly-output/38552509#38552509
+and the intel whitepaper
+
+Reduce variance:
+TODO: warmup flag: if set high, it will warmup the code path before measuring
+TODO: check that cpupower frequency scaling is off. warn if its on.
+TODO: check that other processes aren't running. warn if others are running.
+TODO: check whether intel turbo boost is on. warn user.
+  $ echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo
+TODO: pin benchmark to a CPU to reduce variance?
+TODO: move the benchmark around to get results from it being moved around
+TODO: flag to run bm a few times. warn if bm only ran once
+TODO: random interleaving can reduce variation --benchmark_enable_random_interleaving=true
+TODO: specify non-zero repetition count --benchmark_repetitions=9
+TODO: decrease the per-repetition time --benchmark_min_time=0.1.
+
+TODO: Flag to specify terminal output, CSV, JSON
+
+TODO: Range based loop. Something like this:
+
+class SubState {};
+
+class State {
+ public:
+  class iterator {
+   public:
+    iterator(SubState *ptr) : ptr_(ptr) {}
+    iterator operator++() {
+      ++ptr_;
+      return *this;
+    }
+    bool operator!=(const iterator &other) const { return ptr_ != other.ptr_; }
+    const SubState &operator*() const { return *ptr_; }
+
+   private:
+    SubState *ptr_;
+  };
+
+ private:
+  unsigned len;
+  SubState *arr;
+
+ public:
+  iterator begin() const { return iterator(arr); }
+  iterator end() const { return iterator(arr + len); }
+};
