@@ -1,26 +1,38 @@
 // BM, small benchmark library
 //
 // Example:
-// static void BM_KMP(const BM::State& state) {
-// 	std::string space;
-//  std::string query;
-//  for (auto _ : state) {
-//		KnuthMorrisPrattSearch(space, query);
-//  }
-// }
-// BM_Register(BM_KMP);
-// BM_Main();
+//	static void BM_KMP(const BM::State& state) {
+//		std::string space;
+//		std::string query;
+//		for (auto _ : state) {
+//			KnuthMorrisPrattSearch(space, query);
+//		}
+//	}
+//	BM_Register(BM_KMP);
+//	BM_Main();
 
 #ifndef _BM_H_
 #define _BM_H_
 
-#ifdef _WIN32
-#include <intrin.h>
-#else
+#include <stdint.h>
+
+// WARNING: rdtsc counts reference cycles, not actual CPU core cycles.
+// Run You can check this with sudo dmesg | grep tsc and it'll print the TSC
+// frequency and the actual CPU frequency
+
 #include <x86intrin.h>
-#endif
 
 namespace BM {
+
+namespace Internal {
+
+uint64_t Now() {
+  unsigned int lo, hi;
+  __asm__ __volatile__("rdtsc" : "=a"(lo), "=d"(hi));
+  return ((uint64_t)hi << 32) | lo;
+}
+
+}  // namespace Internal
 
 void Initialize(int *argc, char **argv) {}
 
