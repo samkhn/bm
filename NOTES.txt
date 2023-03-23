@@ -1,0 +1,139 @@
+Perf/BM library
+
+OBJ: microbenchmark library for C++ small binaries with significant data structures.
+OBJ: targeted for benchmarking operations on thread safe data structures
+OBJ: exploit the highest resolution clock on Intel and AMD chipsets
+REQ: header only. All a user needs to do is #include "bm.h"
+REQ: reduce variance caused by hardware jitter
+NONREQ: reduce variance caused by hardware/kernel interrupts.
+ NOTE: cannot prevent kernel interrupts or hardware interrupts so please run a few times
+ NOTE: cannot prevent OOO execution
+NONREQ: exception safety.
+NONREQ: C || C++ <= version 11
+NONREQ: Windows
+
+ALT: google/benchmark [https://github.com/google/benchmark]
+DIFF: overkill for small binaries
+ALT: sheredom/ubench [https://github.com/sheredom/ubench.h]
+DIFF: uses clocks which loses resolution on ns
+
+Example:
+static void BM_KMP(const BM::State& state) {
+	std::string space;
+	std::string query;
+	for (auto _ : state) {
+		KnuthMorrisPrattSearch(space, query);
+	}
+}
+BM_Register(BM_KMP);
+BM_Main();
+
+TODO: BM::State and RunState to capture execution (w/ support for for looping as in example)
+class State {
+ public:
+  class iterator {
+   public:
+    iterator(RunState *ptr) : ptr_(ptr) {}
+    iterator operator++() {
+	  // TODO: sample rdtsc here and add to appropriate section
+      ++ptr_;
+      return *this;
+    }
+    bool operator!=(const iterator &other) const { return ptr_ != other.ptr_; }
+    const RunState &operator*() const { return *ptr_; }
+
+   private:
+    RunState *ptr_;
+  };
+
+ private:
+  unsigned len;
+  RunState *arr;
+
+ public:
+  iterator begin() const { return iterator(arr); }
+  iterator end() const { return iterator(arr + len); }
+};
+
+TODO: kernel might interrupt and bring thread back onto a diff core, causing a diff RDTSC, we need to ignore those and warn the user
+TODO: macro BM_Register() to add a function to a hidden static vector
+TODO: Initialize(&argc, argv) to process flags and turn on/off switches
+TODO: ShutDown() to write results
+TODO: Run() to execute and record results
+TODO: warmup flag: if set high, it will warmup the code path before measuring
+TODO: check that cpupower frequency scaling is off. warn if its on.
+TODO: check that other processes aren't running. warn if others are running.
+TODO: check whether intel turbo boost is on. warn user.
+ $ echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo
+TODO: pin benchmark to a CPU to reduce variance?
+TODO: move the benchmark around to get results from it being moved around
+TODO: flag to run bm a few times. warn if bm only ran once
+TODO: random interleaving can reduce variation --benchmark_enable_random_interleaving=true
+TODO: specify non-zero repetition count --benchmark_repetitions=9
+TODO: decrease the per-repetition time --benchmark_min_time=0.1.
+IDEA: fallback to chrono?
+TODO: Flag to specify terminal output, CSV
+
+Testing:
+Create a series of interesting binaries to benchmark.
+Use godbolt to verify that the correct machine instructions are being generated
+ especially for preventing harmful micro-optimisations.
+
+TODO: BM::DoNotOptimize(void *p);
+Escape and Clobber work together to trick the compiler into thinking we might globally use some data, thus it avoids optimizing it out
+Effect of clobber() is limited to memory that is potentially accessible from an imagineary global root pointer.
+From a compilers point of view, some data is completely hidden from the initial scope. Clobber pretends to touch all the data the global scope can see.
+To ensure all data can be seen, we use scape.
+// Marks p as arbitrarily aliased (to prevent dead code elim or scalar replacement of aggregate passes)
+static void escape(void *p) {
+	asm volatile("" : : "g"(p) : "memory");
+}
+
+// Aliases all the memory in the scope
+static void clobber() {
+	asm volatile("" : : : "memory");
+}
+
+void benchmark() {
+	vector<int> v;
+	v.reserve(1);
+	v.push_back(10);
+}
+
+Benchmark would normally get mostly optimized out.
+v.reserve(1) is not visible to clobber until we escape
+
+void benchmark() {
+	vector<int> v;
+	v.reserve(1);
+	escape(v.data());
+	v.push_back(10);
+	clobber();
+}
+
+IDEA: prevent reordering of instructions with fencing
+e.g. Say we have uint8_t array;
+prevent clflush from being reordered by the CPU or the compiler in this direction w/
+_mm_mfence();
+flush the line containing the element w/
+_mm_clflush(&array[0]);
+
+mfence and lfence must be in this order + compiler barrier for rdtsc
+_mm_mfence();
+_mm_lfence();
+time1 = __rdtsc();
+
+serialize __rdtsc with respect to trailing instructions + compiler barrier for rdtsc and the load
+_mm_lfence();
+int temp = array[0];  // this is a cache miss
+
+measuring the write miss latency to array is not meaningful because it's an implementation detail and the next write may also miss
+no need for mfence because there are no stores in between
+mfence and lfence must be in this order + compiler barrier for rdtsc and the load
+_mm_lfence();
+time2 = __rdtsc();
+
+serialize __rdtsc with respect to trailing instructions
+_mm_lfence();
+msl = time2 - time1;
+
