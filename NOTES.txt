@@ -55,8 +55,15 @@ class State {
   iterator end() const { return iterator(arr + len); }
 };
 
-TODO: kernel might interrupt and bring thread back onto a diff core, causing a diff RDTSC, we need to ignore those and warn the user
-TODO: macro BM_Register() to add a function to a hidden static vector
+Testing:
+Tests are a series of binaries in tests/
+Create a series of interesting binaries to benchmark.
+Use godbolt to verify that the correct machine instructions are being generated
+ especially for preventing harmful micro-optimisations.
+
+NOTE: kernel might interrupt and bring thread back onto a diff core, causing a diff RDTSC,
+	we need to ignore those and warn the user
+
 TODO: Initialize(&argc, argv) to process flags and turn on/off switches
 TODO: ShutDown() to write results
 TODO: Run() to execute and record results
@@ -73,11 +80,6 @@ TODO: specify non-zero repetition count --benchmark_repetitions=9
 TODO: decrease the per-repetition time --benchmark_min_time=0.1.
 IDEA: fallback to chrono?
 TODO: Flag to specify terminal output, CSV
-
-Testing:
-Create a series of interesting binaries to benchmark.
-Use godbolt to verify that the correct machine instructions are being generated
- especially for preventing harmful micro-optimisations.
 
 TODO: BM::DoNotOptimize(void *p);
 Escape and Clobber work together to trick the compiler into thinking we might globally use some data, thus it avoids optimizing it out
