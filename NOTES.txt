@@ -63,11 +63,7 @@ struct Benchmark {
 }
 
 TODO: Initialize(&argc, argv) to process flags and turn on/off switches
-	IDEA: flags library? I might try to break this out into its own library
-		FLAG_DECLARE("FLAG_NAME", type, default_value, "what is it and how to use it");
-		RETURN_IF_ERROR(FLAG_SET("FLAG_NAME", value));
-		StatusOr<int> f = ASSIGN_OR_RETURN(FLAG_GET("FLAG_NAME"));
-	TODO: proc/sysfs check testing: --test_tmp_dir 
+	TODO: proc/sysfs check testing: --test_tmp_dir
 	TODO: proc/sysfs check. namespace BM::System.
 		Test by setting a flag --test_fs_root=$TMP_DIR
 		Table: name of check, where to find in sysfs/procfs, what data is there, what we expect, what diff means
@@ -85,19 +81,31 @@ TODO: Run() to execute and record results
 	TODO: random interleaving can reduce variation --benchmark_enable_random_interleaving=true
 	TODO: specify non-zero repetition count --benchmark_repetitions=9
 	TODO: decrease the per-repetition time --benchmark_min_time=0.1
+	NOTE: BM_RUN() should run until we have some statistically significant results. Some heuristics:
+		running stddev or variance stops changing for some number of iterations?
+		minimum_time < cpu_time
+		1 < iters < 1e9
+		5*minimum_time < real_time
 	TODO: BM::State and RunState to capture execution (w/ support for for looping as in example)
+		NOTE: record at the first iteration of state and when you exit the loop
+		TODO: Add Args(A) and ArgRange(A-B)? To test how parameter size impacts benchmarks
+		TODO: Add Threads(N)? To test how multithread impacts benchmarks
 class State {
  public:
   class iterator {
    public:
-    iterator(RunState *ptr) : ptr_(ptr) {}
+    iterator(RunState *ptr) : ptr_(ptr) {
+	  	// TODO: sample rdtsc here and add to appropriate section
+		}
     iterator operator++() {
-	  // TODO: sample rdtsc here and add to appropriate section
       ++ptr_;
       return *this;
     }
     bool operator!=(const iterator &other) const { return ptr_ != other.ptr_; }
     const RunState &operator*() const { return *ptr_; }
+		~iterator() {
+			// TODO: sample rdtsc here
+		}
 
    private:
     RunState *ptr_;
@@ -171,3 +179,8 @@ serialize __rdtsc with respect to trailing instructions
 _mm_lfence();
 msl = time2 - time1;
 
+FOR ANOTHER DAY
+IDEA: flags library? I might try to break this out into its own library
+	FLAG_DECLARE("FLAG_NAME", type, default_value, "what is it and how to use it");
+	RETURN_IF_ERROR(FLAG_SET("FLAG_NAME", value));
+	StatusOr<int> f = ASSIGN_OR_RETURN(FLAG_GET("FLAG_NAME"));
