@@ -1,27 +1,102 @@
 // BM, small benchmark library
 //
 // Example:
-//	static void BM_KMP(const BM::State& state) {
-//		std::string space;
-//		std::string query;
-//		for (auto _ : state) {
-//			KnuthMorrisPrattSearch(space, query);
-//		}
-//	}
-//	BM_Register(BM_KMP);
-//	BM_Main();
+// File: bm.cc
+// static void BM_KMP(const BM::State& state) {
+//   std::string space;
+//   std::string query;
+//   for (auto _ : state) {
+//     KnuthMorrisPrattSearch(space, query);
+//   }
+// }
+// BM_Register(BM_KMP);
+// BM_Main();
+//
+// CLI:
+// $ g++ -I/path/to/headers bm.cc -O3 -o bm
+// $ ./bm --output_format=CSV --output_file=benchmark.csv
+//
 
 #ifndef _BM_H_
 #define _BM_H_
 
-#include <stdint.h>
 #include <x86intrin.h>
 
+#include <cstdint>
+#include <cstring>
 #include <functional>
 #include <iostream>
+#include <string>
 #include <vector>
 
 namespace BM {
+
+static const std::string kTestRootDirFlag = "test_root_dir";
+// Options captures global settings for running the Benchmark (passed in via
+// command line flags). These include end-user and testing flags:
+// TODO: --warmup={True|False}. Default is true. BM will spend some time warming
+// up the codepath.
+// TODO: --enable_random_interleaving={True|False}. Default is true. To prevent
+// a CPU cache line from getting used to a particular codepath, BM will move the
+// BM onto different chips.
+// TODO: --min_repetitions={positive integer}. Default is 10. BM will repeat
+// benchmark at least min_repetitions times to get statistically significant
+// results.
+// TODO: --min_time={positive float}. Default is 1. BM will spend at least
+// min_time seconds on the benchmark.
+// Testing only.
+// --test_root_dir: By default, benchmarking library assumes system root is '/'.
+// If set, system root will be test_root_dir.
+class Options {
+ public:
+  Options() : test_root_dir_set_(false), test_root_dir_("") {}
+
+  // Returns non zero value on error:
+  // 1: Line doesn't match {--option_name=option_value}
+  // 2: Option value doesn't match type for option name
+  // 3: Could not find option flag for the type
+  int InsertCliFlag(char *argv) {
+    // Check that the argument matchines --{option_name}={option_value}
+    if (!argv && !(argv[0] == '-' && argv[1] == '-')) return 1;
+    char *option_name = argv + 2;
+    char *option_value = strchr(argv, '=');
+    if (option_value == NULL) return 1;
+    option_value++;
+    if (!option_name && !(isalpha(*option_name) || isdigit(*option_name)))
+      return 1;
+    if (!option_value || *option_value == '\0') return 1;
+    // Match option_name to a real option
+    // During matching, because we are using a few key characters as a
+    // heuristic, you might be able to just sum up the relevant chars
+    const std::string *closest_candidate = nullptr;
+    switch (*option_name) {
+      case 't': {
+        // Because testing flags are optional, we won't set closest_candidate
+        if (strncmp(option_name, kTestRootDirFlag.c_str(),
+                    kTestRootDirFlag.size()) == 0) {
+          // NOTE: we don't check whether the file exists here. We'll do error
+          // checking on that when we try to open the file/directory.
+          test_root_dir_ = option_value;
+          test_root_dir_set_ = true;
+          std::cout << "TEST FLAG SET: --test_root_dir=" << test_root_dir_
+                    << "\n";
+        }
+        break;
+      }
+      default:
+        if (closest_candidate) {
+          std::cerr << "No flags matched for " << option_name << ". Maybe "
+                    << closest_candidate << "?\n";
+        }
+        return 3;
+    }
+    return 0;
+  }
+
+ private:
+  bool test_root_dir_set_;
+  std::string test_root_dir_;
+};
 
 class State {};
 
@@ -29,21 +104,22 @@ typedef void(Function)(const BM::State &);
 
 class Benchmark {
  public:
-  ::BM::Function *f;
+  BM::Function *f;
 };
 
 namespace Internal {
 
-static std::vector<::BM::Benchmark *> registered_benchmarks_;
+static BM::Options options_;
+static std::vector<BM::Benchmark *> registered_benchmarks_;
 
-::BM::Benchmark *Register(::BM::Function *bm_f) {
-  ::BM::Benchmark *bm = new ::BM::Benchmark;
+BM::Benchmark *Register(BM::Function *bm_f) {
+  BM::Benchmark *bm = new BM::Benchmark;
   if (!bm_f) {
     std::cerr << "No benchmark passed\n";
     return bm;
   }
   bm->f = bm_f;
-  ::BM::Internal::registered_benchmarks_.push_back(bm);
+  BM::Internal::registered_benchmarks_.push_back(bm);
   return bm;
 }
 
@@ -58,7 +134,31 @@ uint64_t Now() {
 
 }  // namespace Internal
 
-void Initialize(int *argc, char **argv) {}
+void Initialize(int argc, char **argv) {
+  int status = 0;
+  for (int i = 1; i < argc; ++i) {
+    status = BM::Internal::options_.InsertCliFlag(argv[i]);
+    switch (status) {
+      case 1: {
+        std::cout << "Error with flag. Got " << argv[i]
+                  << ". Want form --{option_name}={option_value}\n";
+        break;
+      }
+      case 2: {
+        std::cout
+            << "Error with flag " << argv[i]
+            << ". Parsed flag value does not match flag's declared type\n";
+        break;
+      }
+      case 3: {
+        std::cout << "Error with flag " << argv[i] << "Unknown option_name\n";
+        break;
+      }
+      default:
+        continue;
+    }
+  }
+}
 
 void Run() {}
 
@@ -74,7 +174,7 @@ void ShutDown() {}
 
 #define BM_Main()                   \
   int main(int argc, char **argv) { \
-    BM::Initialize(&argc, argv);    \
+    BM::Initialize(argc, argv);     \
     BM::Run();                      \
     BM::ShutDown();                 \
     return 0;                       \

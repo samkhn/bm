@@ -8,9 +8,9 @@ BM_Register(BM_Sample);
 
 int main() {
   if (BM::Internal::registered_benchmarks_.size() != 1) {
-    std::cout << "Failed to register bm\n";
+    std::cout << "Test Register. Failed to register. Want success.\n";
     return -1;
   }
-  std::cout << "Passed\n";
+  std::cout << "Test Register. Passed\n";
   return 0;
 }
