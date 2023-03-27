@@ -33,9 +33,19 @@ add_custom_command(
 	COMMENT "Runs test_flag binary and checks whether flags are returning expected values"
 )
 
+add_executable(test_sysfs_scan tests/test_sysfs_scan.cc)
+target_link_libraries(test_sysfs_scan PUBLIC bm)
+add_custom_target(check_sysfs_scan DEPENDS test_sysfs_scan)
+add_custom_command(
+	TARGET check_sysfs_scan
+	COMMAND python3 ${CMAKE_SOURCE_DIR}/tests/test_sysfs_scan_integration.py $<TARGET_FILE:test_sysfs_scan>
+	COMMENT "Runs test_sysfs_scan: checks /proc /sysfs for relevant, important flags"
+)
+
 add_custom_target(check_all
 	DEPENDS
 		check_register
 		check_flags
+		check_sysfs_scan
 )
 

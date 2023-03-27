@@ -62,17 +62,6 @@ struct Benchmark {
 	}
 }
 
-TODO: Initialize(&argc, argv) to process flags and turn on/off switches
-	TODO: proc/sysfs check testing: --test_tmp_dir
-	TODO: proc/sysfs check. namespace BM::System.
-		Test by setting a flag --test_fs_root=$TMP_DIR
-		Table: name of check, where to find in sysfs/procfs, what data is there, what we expect, what diff means
-		TODO: check that cpupower frequency scaling is off. warn if its on.
-			$ # Intel
-			$ echo 1 > /sys/devices/system/cpu/intel_pstate/no_turbo
-			$ # AMD
-			$ echo 0 > /sys/devices/system/cpu/cpufreq/boost
-	TODO: check that other processes aren't running. warn if others are running.
 TODO: ShutDown() to write results
 	TODO: Flag to specify terminal output, CSV  --output=csv --output_file=bm.csv
 TODO: Run() to execute and record results

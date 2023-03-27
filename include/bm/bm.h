@@ -24,6 +24,7 @@
 
 #include <cstdint>
 #include <cstring>
+#include <fstream>
 #include <functional>
 #include <iostream>
 #include <string>
@@ -46,17 +47,20 @@ static const std::string kTestRootDirFlag = "test_root_dir";
 // min_time seconds on the benchmark.
 // Testing only.
 // --test_root_dir: By default, benchmarking library assumes system root is '/'.
-// If set, system root will be test_root_dir.
+// If set, system root will be test_root_dir. Used in testing procfs and sysfs
+// checks.
 class Options {
  public:
-  Options() : test_root_dir_set_(false), test_root_dir_("") {}
+  Options()
+      : testing_flag_set_(false),
+        test_root_dir_set_(false),
+        test_root_dir_("") {}
 
   // Returns non zero value on error:
   // 1: Line doesn't match {--option_name=option_value}
   // 2: Option value doesn't match type for option name
   // 3: Could not find option flag for the type
   int InsertCliFlag(char *argv) {
-    // Check that the argument matchines --{option_name}={option_value}
     if (!argv && !(argv[0] == '-' && argv[1] == '-')) return 1;
     char *option_name = argv + 2;
     char *option_value = strchr(argv, '=');
@@ -65,9 +69,6 @@ class Options {
     if (!option_name && !(isalpha(*option_name) || isdigit(*option_name)))
       return 1;
     if (!option_value || *option_value == '\0') return 1;
-    // Match option_name to a real option
-    // During matching, because we are using a few key characters as a
-    // heuristic, you might be able to just sum up the relevant chars
     const std::string *closest_candidate = nullptr;
     switch (*option_name) {
       case 't': {
@@ -78,6 +79,7 @@ class Options {
           // checking on that when we try to open the file/directory.
           test_root_dir_ = option_value;
           test_root_dir_set_ = true;
+          testing_flag_set_ = true;
           std::cout << "TEST FLAG SET: --test_root_dir=" << test_root_dir_
                     << "\n";
         }
@@ -92,10 +94,21 @@ class Options {
     }
     return 0;
   }
-
- private:
+  bool testing_flag_set_;
   bool test_root_dir_set_;
   std::string test_root_dir_;
+};
+
+struct SystemCheck {
+  std::string file_path;
+  std::string want;
+  std::string remedy;
+};
+
+static const std::vector<SystemCheck> kSysfsChecks{
+    {"/sys/devices/system/cpu/intel_pstate/no_turbo", "1",
+     "Warning: Chip power frequency scaling is on. Recommend turning it off "
+     "for more accurate results."},
 };
 
 class State {};
@@ -107,8 +120,6 @@ class Benchmark {
   BM::Function *f;
 };
 
-namespace Internal {
-
 static BM::Options options_;
 static std::vector<BM::Benchmark *> registered_benchmarks_;
 
@@ -119,7 +130,7 @@ BM::Benchmark *Register(BM::Function *bm_f) {
     return bm;
   }
   bm->f = bm_f;
-  BM::Internal::registered_benchmarks_.push_back(bm);
+  BM::registered_benchmarks_.push_back(bm);
   return bm;
 }
 
@@ -132,12 +143,10 @@ uint64_t Now() {
   return ((uint64_t)hi << 32) | lo;
 }
 
-}  // namespace Internal
-
 void Initialize(int argc, char **argv) {
   int status = 0;
   for (int i = 1; i < argc; ++i) {
-    status = BM::Internal::options_.InsertCliFlag(argv[i]);
+    status = BM::options_.InsertCliFlag(argv[i]);
     switch (status) {
       case 1: {
         std::cout << "Error with flag. Got " << argv[i]
@@ -158,6 +167,30 @@ void Initialize(int argc, char **argv) {
         continue;
     }
   }
+  for (int i = 0; i < kSysfsChecks.size(); ++i) {
+    // if test_root_dir is set, prepend to path in check and set
+    // print_all_warnings_to_high. let user knwo we're goign to print everything
+    // if file doesnt exist, ignore. but if testing, print that you couldn't
+    // find the file read that file if it isn't what we want, print warning
+    std::string p;
+    if (options_.test_root_dir_set_) {
+      p = options_.test_root_dir_;
+      if (p.back() == '/') p.pop_back();
+    }
+    p += kSysfsChecks[i].file_path;
+    if (options_.testing_flag_set_) std::cout << "Checking sysfs@" << p << "\n";
+    std::ifstream sys_file;
+    sys_file.open(p, std::ios::in);
+    if (sys_file.is_open()) {
+      std::string v;
+      sys_file >> v;
+      if (v != kSysfsChecks[i].want) std::cout << kSysfsChecks[i].remedy;
+      sys_file.close();
+    } else {
+      if (options_.testing_flag_set_)
+        std::cout << "Failed to open " << p << "\n";
+    }
+  }
 }
 
 void Run() {}
@@ -166,7 +199,7 @@ void ShutDown() {}
 
 }  // namespace BM
 
-#define BM_REGISTER_(bm) BM::Internal::Register(bm);
+#define BM_REGISTER_(bm) BM::Register(bm);
 
 #define BM_NAME(bm) benchmark_id_##__LINE__##bm
 
