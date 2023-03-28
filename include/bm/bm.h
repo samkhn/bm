@@ -98,9 +98,9 @@ class SystemCheck {
 };
 
 static const std::vector<SystemCheck> kSysfsChecks{
-  {"/sys/devices/system/cpu/intel_pstate/no_turbo", "1",
-   "Warning: Chip power frequency scaling is on. Recommend turning it off "
-   "for more accurate results."},
+    {"/sys/devices/system/cpu/intel_pstate/no_turbo", "1",
+     "Warning: Chip power frequency scaling is on. Recommend turning it off "
+     "for more accurate results."},
 };
 
 // State holds threading and argument info for benchmarks.
@@ -137,8 +137,9 @@ void Initialize(int argc, char **argv) {
         break;
       }
       case 2: {
-        std::cout << "Error with flag " << argv[i]
-                  << ". Parsed flag value does not match flag's declared type\n";
+        std::cout
+            << "Error with flag " << argv[i]
+            << ". Parsed flag value does not match flag's declared type\n";
         break;
       }
       case 3: {
