@@ -16,6 +16,9 @@
 
 namespace BM {
 
+static const std::string kOutputFileFormatFlag = "output_format";
+static const std::string kOutputFilePathFlag = "output_file";
+
 static const std::string kTestRootDirFlag = "test_root_dir";
 
 // Options captures global settings for running the Benchmark (passed in via
@@ -26,10 +29,41 @@ static const std::string kTestRootDirFlag = "test_root_dir";
 // checks.
 class Options {
  public:
+  enum class OutputFormat {
+    kUnknown,
+    kText,
+  };
+  static OutputFormat StrToOutputFormat(const char *output_format_string) {
+    if (!output_format_string) {
+      return OutputFormat::kUnknown;
+    }
+    if (strncmp("kT", output_format_string, 2)) {
+      return OutputFormat::kText;
+    }
+    return OutputFormat::kUnknown;
+  }
+  static std::string OutputFormatToStr(const OutputFormat &format) {
+    switch (format) {
+      case Options::OutputFormat::kUnknown:
+        return "Unknown";
+      case Options::OutputFormat::kText:
+        return "Text";
+      default:
+        break;
+    }
+    return "";
+  }
+  OutputFormat output_format_;
+  std::string output_file_path_;
+
   // Testing only flags
   bool any_test_flag_set_;
   std::string test_root_dir_;
-  Options() : any_test_flag_set_(false), test_root_dir_("") {}
+  Options()
+      : output_format_(Options::OutputFormat::kUnknown),
+        output_file_path_(""),
+        any_test_flag_set_(false),
+        test_root_dir_("") {}
 
   // InsertCliFlag returns non zero value on error:
   // 1: Line doesn't match {--option_name=option_value}
@@ -40,6 +74,9 @@ class Options {
     if (!argv && !(argv[0] == '-' && argv[1] == '-')) {
       return 1;
     }
+    if (*argv == '\0') {
+      return 0;
+    }
     char *option_name = argv + 2;
     if (!option_name && !(isalpha(*option_name) || isdigit(*option_name))) {
       return 1;
@@ -48,6 +85,7 @@ class Options {
     if (option_value == NULL) {
       return 1;
     }
+
     option_value++;
     if (!option_value || *option_value == '\0') {
       return 1;
@@ -60,16 +98,34 @@ class Options {
                      kTestRootDirFlag.size())) {
           // NOTE: we don't check whether the file exists here. We'll do error
           // checking on that when we try to open the file/directory.
+          // TODO: verify that assignment operator does a deep copy.
           test_root_dir_ = option_value;
           any_test_flag_set_ = true;
           std::cout << "FLAG SET: --test_root_dir=" << test_root_dir_ << "\n";
         }
         break;
       }
+      case 'o': {
+        // TODO(OPTIMIZATION): instead of strncmp, bump the char * by n
+        // characters to reach the first differing character. Address jump is
+        // slightly faster than 2 strncmp calls (O(1) vs O(n)).
+        closest_candidate = &kOutputFileFormatFlag;
+        if (!strncmp(option_name, kOutputFileFormatFlag.c_str(),
+                     kOutputFileFormatFlag.size())) {
+          output_format_ = StrToOutputFormat(option_value);
+          break;
+        }
+        if (!strncmp(option_name, kOutputFilePathFlag.c_str(),
+                     kOutputFilePathFlag.size())) {
+          // TODO: verify that assignment operator does a deep copy.
+          output_file_path_ = option_value;
+          break;
+        }
+      }
       default: {
         if (closest_candidate) {
-          std::cerr << "No flags matched for " << option_name << ". Maybe "
-                    << closest_candidate << "?\n";
+          std::cout << "No flags matched for " << option_name << ". Maybe "
+                    << *closest_candidate << "?\n";
         }
         return 3;
       }
@@ -78,6 +134,8 @@ class Options {
   }
 };
 
+// TODO(REFACTOR): Add a Validate() method to Config to do all checks at once.
+//  Maybe move closest candidate check to here instead of in CLI parsing?
 static BM::Options Config;
 
 // TODO: move to internal namespace
@@ -182,7 +240,16 @@ void Initialize(int argc, char **argv) {
 
 void Run() {}
 
-void ShutDown() {}
+void ShutDown() {
+  if (Config.output_format_ != Options::OutputFormat::kUnknown) {
+    std::cout << "Format: " << Options::OutputFormatToStr(Config.output_format_)
+              << ". ";
+  }
+  // TODO: Write Benchmark out, passing the output_format option.
+  if (!Config.output_file_path_.empty()) {
+    std::cout << "Generated " << Config.output_file_path_ << ". ";
+  }
+}
 
 }  // namespace BM
 

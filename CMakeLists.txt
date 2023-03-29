@@ -42,10 +42,20 @@ add_custom_command(
 	COMMENT "Runs test_sysfs_scan: checks /proc /sysfs for relevant, important flags"
 )
 
+add_executable(test_output_flag tests/test_output_flag.cc)
+target_link_libraries(test_output_flag PUBLIC bm)
+add_custom_target(check_output_flag DEPENDS test_output_flag)
+add_custom_command(
+	TARGET check_output_flag
+	COMMAND python3 ${CMAKE_SOURCE_DIR}/tests/test_output_flag_integration.py $<TARGET_FILE:test_output_flag>
+	COMMENT "Runs test_output_flag: checks --output flags are set"
+)
+
 add_custom_target(check_all
 	DEPENDS
 		check_register
 		check_flags
 		check_sysfs_scan
+    check_output_flag
 )
 
