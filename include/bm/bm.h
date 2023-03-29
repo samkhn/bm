@@ -27,13 +27,9 @@ static const std::string kTestRootDirFlag = "test_root_dir";
 class Options {
  public:
   // Testing only flags
-  bool testing_flag_set_;
-  bool test_root_dir_set_;
+  bool any_test_flag_set_;
   std::string test_root_dir_;
-  Options()
-      : testing_flag_set_(false),
-        test_root_dir_set_(false),
-        test_root_dir_("") {}
+  Options() : any_test_flag_set_(false), test_root_dir_("") {}
 
   // InsertCliFlag returns non zero value on error:
   // 1: Line doesn't match {--option_name=option_value}
@@ -45,14 +41,14 @@ class Options {
       return 1;
     }
     char *option_name = argv + 2;
+    if (!option_name && !(isalpha(*option_name) || isdigit(*option_name))) {
+      return 1;
+    }
     char *option_value = strchr(argv, '=');
     if (option_value == NULL) {
       return 1;
     }
     option_value++;
-    if (!option_name && !(isalpha(*option_name) || isdigit(*option_name))) {
-      return 1;
-    }
     if (!option_value || *option_value == '\0') {
       return 1;
     }
@@ -60,15 +56,13 @@ class Options {
     switch (*option_name) {
       case 't': {
         // Because testing flags are optional, we won't set closest_candidate
-        if (strncmp(option_name, kTestRootDirFlag.c_str(),
-                    kTestRootDirFlag.size()) == 0) {
+        if (!strncmp(option_name, kTestRootDirFlag.c_str(),
+                     kTestRootDirFlag.size())) {
           // NOTE: we don't check whether the file exists here. We'll do error
           // checking on that when we try to open the file/directory.
           test_root_dir_ = option_value;
-          test_root_dir_set_ = true;
-          testing_flag_set_ = true;
-          std::cout << "TEST FLAG SET: --test_root_dir=" << test_root_dir_
-                    << "\n";
+          any_test_flag_set_ = true;
+          std::cout << "FLAG SET: --test_root_dir=" << test_root_dir_ << "\n";
         }
         break;
       }
@@ -97,6 +91,7 @@ class SystemCheck {
   std::string remedy;
 };
 
+// TODO: add check for AMD x86 chip equivalent.
 static const std::vector<SystemCheck> kSysfsChecks{
     {"/sys/devices/system/cpu/intel_pstate/no_turbo", "1",
      "Warning: Chip power frequency scaling is on. Recommend turning it off "
@@ -152,25 +147,27 @@ void Initialize(int argc, char **argv) {
     }
   }
   for (int i = 0; i < kSysfsChecks.size(); ++i) {
-    std::string p;
-    if (Config.test_root_dir_set_) {
-      p = Config.test_root_dir_;
-      if (p.back() == '/') {
-        p.pop_back();
+    std::string path;
+    if (!Config.test_root_dir_.empty()) {
+      path = Config.test_root_dir_;
+      // We pop the last directory seperator because sysfs check paths always
+      // start with root (/).
+      if (path.back() == '/') {
+        path.pop_back();
       }
     }
-    p += kSysfsChecks[i].file_path;
-    // TODO: Refactor: testing_flag_set_ is used during testing to see if flags
+    path.append(kSysfsChecks[i].file_path);
+    // TODO: Refactor: any_test_flag_set_ is used during testing to see if flags
     // are properly set. Perhaps we want to replace with some sort of global
     // --log_error or --log_verbosity=TESTING.
-    if (Config.testing_flag_set_) {
-      std::cout << "Checking sysfs@" << p << "\n";
+    if (Config.any_test_flag_set_) {
+      std::cout << "Checking sysfs@" << path << "\n";
     }
     std::ifstream sys_file;
-    sys_file.open(p, std::ios::in);
+    sys_file.open(path, std::ios::in);
     if (!sys_file.is_open()) {
-      if (Config.testing_flag_set_) {
-        std::cout << "Failed to open " << p << "\n";
+      if (Config.any_test_flag_set_) {
+        std::cout << "Failed to open " << path << "\n";
       }
       continue;
     }

@@ -18,7 +18,7 @@ TESTS = [
     Test('TestInvalidFlagName', ['--=test'], 'Error with flag'),
     Test('TestSetInvalidTestRootDir', ['--test_root_dir'], 'Error with flag'),
     Test('TestSetTestRootWithNoDir', ['--test_root_dir='], 'Error with flag'),
-    Test('TestSetTestRootDir', ['--test_root_dir=/path'], 'TEST FLAG SET')
+    Test('TestSetTestRootDir', ['--test_root_dir=/path'], 'FLAG SET')
 ]
 
 
@@ -35,8 +35,8 @@ def test_flags_binary():
         test_run = subprocess.run(test_call, capture_output=True)
         if t.want_output not in test_run.stdout.decode():
             print(f"Failed test {t.name}."
-                  " {test_call} got [{test_run.stdout.decode()}]."
-                  " Did not contain [{t.want_output}].")
+                  f" {test_call} got [{test_run.stdout.decode()}]."
+                  f" Did not contain [{t.want_output}].")
         else:
             passed += 1
     print(f"Test Flags Integration. Passed {passed} out of {TEST_COUNT}")

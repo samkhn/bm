@@ -47,8 +47,8 @@ def test_sysfs_scan():
         test_run = subprocess.run(test_call, capture_output=True)
         if t.want_output not in test_run.stdout.decode():
             print(f"Failed test {t.name}."
-                  " {test_call} got [{test_run.stdout.decode()}]."
-                  " Did not contain [{t.want_output}].")
+                  f" {test_call} got [{test_run.stdout.decode()}]."
+                  f" Did not contain [{t.want_output}].")
         else:
             passed += 1
         f.close()

@@ -62,21 +62,20 @@ struct Benchmark {
 	}
 }
 
-// TODO: --warmup={True|False}. Default is true. BM will spend some time warming
-// up the codepath.
-// TODO: --enable_random_interleaving={True|False}. Default is true. To prevent
-// a CPU cache line from getting used to a particular codepath, BM will move the
-// BM onto different chips.
-// TODO: --min_repetitions={positive integer}. Default is 10. BM will repeat
-// benchmark at least min_repetitions times to get statistically significant
-// results.
-// TODO: --min_time={positive float}. Default is 1. BM will spend at least
-// min_time seconds on the benchmark.
-//
-// --output_format={text,csv}. Default is text.
-// --output_file={filename}. If specified, benchmarks will be written to file.
-// BM will always write to stdout.
-// 
+TODO: --warmup={True|False}. Default is true. BM will spend some time warming
+up the codepath.
+TODO: --enable_random_interleaving={True|False}. Default is true. To prevent
+a CPU cache line from getting used to a particular codepath, BM will move the
+BM onto different chips.
+TODO: --min_repetitions={positive integer}. Default is 10. BM will repeat
+benchmark at least min_repetitions times to get statistically significant
+results.
+TODO: --min_time={positive float}. Default is 1. BM will spend at least
+min_time seconds on the benchmark.
+
+--output_format={text,csv}. Default is text.
+--output_file={filename}. If specified, benchmarks will be written to file.
+BM will always write to stdout.
 
 
 TODO: ShutDown() to write results
