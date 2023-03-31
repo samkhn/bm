@@ -19,12 +19,9 @@ class Test:
 TEST_COUNT = 2
 TESTS = [
     Test("TestSysFsIntelTurboOff",
-         "sys/devices/system/cpu/intel_pstate/no_turbo",
-         "1",
-         ""),
+         "sys/devices/system/cpu/intel_pstate/no_turbo", "1", ""),
     Test("TestSysFsIntelTurboOn",
-         "sys/devices/system/cpu/intel_pstate/no_turbo",
-         "0",
+         "sys/devices/system/cpu/intel_pstate/no_turbo", "0",
          "Chip power frequency scaling is on")
 ]
 
