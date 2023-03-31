@@ -62,34 +62,20 @@ struct Benchmark {
 	}
 }
 
-TODO: --warmup={True|False}. Default is true. BM will spend some time warming
-up the codepath.
-TODO: --enable_random_interleaving={True|False}. Default is true. To prevent
-a CPU cache line from getting used to a particular codepath, BM will move the
-BM onto different chips.
-TODO: --min_repetitions={positive integer}. Default is 10. BM will repeat
-benchmark at least min_repetitions times to get statistically significant
-results.
-TODO: --min_time={positive float}. Default is 1. BM will spend at least
-min_time seconds on the benchmark.
+-----
 
 TODO: ShutDown() to write results
-	TODO: Flag to specify terminal output, CSV  --output=csv --output_file=bm.csv
-TODO: Run() to execute and record results
-	TODO: pin benchmark to a CPU to reduce variance. Make this a parameter to BM::State instead of a flag?
-	TODO: warmup flag: if set high, it will warmup the code path before measuring --benchmark_warmup=true
-	TODO: random interleaving can reduce variation --benchmark_enable_random_interleaving=true
-	TODO: specify non-zero repetition count --benchmark_repetitions=9
-	TODO: decrease the per-repetition time --benchmark_min_time=0.1
-	NOTE: BM_RUN() should run until we have some statistically significant results. Some heuristics:
-		running stddev or variance stops changing for some number of iterations?
-		minimum_time < cpu_time
-		1 < iters < 1e9
-		5*minimum_time < real_time
-	TODO: BM::State and RunState to capture execution (w/ support for for looping as in example)
-		NOTE: record at the first iteration of state and when you exit the loop
-		TODO: Add Args(A) and ArgRange(A-B)? To test how parameter size impacts benchmarks
-		TODO: Add Threads(N)? To test how multithread impacts benchmarks
+
+TODO: implement good tooling (-Wall, -Werror, -pedantic, -Wno-virtual-dtor, iwyu, clang-tidy, clang format in root, -fsanitize, test coverage)
+
+TODO: replace heap allocated raw pointers with unique_ptr
+
+TODO: Run() to execute and print results
+
+TODO: BM::State and RunState to capture execution (w/ support for for looping as in example)
+	NOTE: record at the first iteration of state and when you exit the loop
+	TODO: Add Args(A) and ArgRange(A-B)? To test how parameter size impacts benchmarks
+	TODO: Add Threads(N)? To test how multithread impacts benchmarks
 class State {
  public:
   class iterator {
@@ -120,7 +106,19 @@ class State {
   iterator end() const { return iterator(arr + len); }
 };
 
-IDEA: fallback to chrono if rdtsc isn't available? Warn user about this.
+TODO: warmup flag: if set high, it will warmup the code path before measuring --benchmark_warmup=true
+
+TODO: random interleaving can reduce variation --benchmark_enable_random_interleaving=true
+
+TODO: specify non-zero repetition count --benchmark_repetitions=9
+
+TODO: decrease the per-repetition time --benchmark_min_time=0.1
+NOTE: BM_RUN() should run until we have some statistically significant results. Some heuristics:
+	running stddev or variance stops changing for some number of iterations?
+	minimum_time < cpu_time
+	1 < iters < 1e9
+	5*minimum_time < real_time
+
 TODO: BM::DoNotOptimize(void *p);
 Escape and Clobber work together to trick the compiler into thinking we might globally use some data, thus it avoids optimizing it out
 Effect of clobber() is limited to memory that is potentially accessible from an imagineary global root pointer.
@@ -153,6 +151,10 @@ void benchmark() {
 	clobber();
 }
 
+IDEA: opportunities for functional paradigms, RAII?
+
+IDEA: fallback to chrono if rdtsc isn't available? Warn user about this.
+
 IDEA: prevent reordering of instructions with fencing
 e.g. Say we have uint8_t array;
 prevent clflush from being reordered by the CPU or the compiler in this direction w/
@@ -178,6 +180,10 @@ time2 = __rdtsc();
 serialize __rdtsc with respect to trailing instructions
 _mm_lfence();
 msl = time2 - time1;
+
+IDEA: pin benchmark to a CPU to reduce variance. Make this a parameter to BM::State instead of a flag?
+
+-----
 
 FOR ANOTHER DAY
 IDEA: flags library? I might try to break this out into its own library
