@@ -28,7 +28,8 @@ static const std::string kTestRootDirFlag = "test_root_dir";
 // If set, system root will be test_root_dir. Used in testing procfs and sysfs
 // checks.
 class Options {
- public:
+public:
+  std::string benchmark_binary_name_;
   enum class OutputFormat {
     kUnknown,
     kText,
@@ -44,26 +45,23 @@ class Options {
   }
   static std::string OutputFormatToStr(const OutputFormat &format) {
     switch (format) {
-      case Options::OutputFormat::kUnknown:
-        return "Unknown";
-      case Options::OutputFormat::kText:
-        return "Text";
-      default:
-        break;
+    case Options::OutputFormat::kUnknown:
+      return "Unknown";
+    case Options::OutputFormat::kText:
+      return "Text";
+    default:
+      break;
     }
     return "";
   }
-  OutputFormat output_format_;
-  std::string output_file_path_;
+  OutputFormat output_format_ = Options::OutputFormat::kUnknown;
+  std::string output_file_path_ = "";
 
   // Testing only flags
-  bool any_test_flag_set_;
-  std::string test_root_dir_;
-  Options()
-      : output_format_(Options::OutputFormat::kUnknown),
-        output_file_path_(""),
-        any_test_flag_set_(false),
-        test_root_dir_("") {}
+  bool any_test_flag_set_ = false;
+  std::string test_root_dir_ = "";
+
+  Options() = default;
 
   // InsertCliFlag returns non zero value on error:
   // 1: Line doesn't match {--option_name=option_value}
@@ -92,43 +90,43 @@ class Options {
     }
     const std::string *closest_candidate = nullptr;
     switch (*option_name) {
-      case 't': {
-        // Because testing flags are optional, we won't set closest_candidate
-        if (!strncmp(option_name, kTestRootDirFlag.c_str(),
-                     kTestRootDirFlag.size())) {
-          // NOTE: we don't check whether the file exists here. We'll do error
-          // checking on that when we try to open the file/directory.
-          // TODO: verify that assignment operator does a deep copy.
-          test_root_dir_ = option_value;
-          any_test_flag_set_ = true;
-          std::cout << "FLAG SET: --test_root_dir=" << test_root_dir_ << "\n";
-        }
+    case 't': {
+      // Because testing flags are optional, we won't set closest_candidate
+      if (!strncmp(option_name, kTestRootDirFlag.c_str(),
+                   kTestRootDirFlag.size())) {
+        // NOTE: we don't check whether the file exists here. We'll do error
+        // checking on that when we try to open the file/directory.
+        // TODO: verify that assignment operator does a deep copy.
+        test_root_dir_ = option_value;
+        any_test_flag_set_ = true;
+        std::cout << "FLAG SET: --test_root_dir=" << test_root_dir_ << '\n';
+      }
+      break;
+    }
+    case 'o': {
+      // TODO(OPTIMIZATION): instead of strncmp, bump the char * by n
+      // characters to reach the first differing character. Address jump is
+      // slightly faster than 2 strncmp calls (O(1) vs O(n)).
+      closest_candidate = &kOutputFileFormatFlag;
+      if (!strncmp(option_name, kOutputFileFormatFlag.c_str(),
+                   kOutputFileFormatFlag.size())) {
+        output_format_ = StrToOutputFormat(option_value);
         break;
       }
-      case 'o': {
-        // TODO(OPTIMIZATION): instead of strncmp, bump the char * by n
-        // characters to reach the first differing character. Address jump is
-        // slightly faster than 2 strncmp calls (O(1) vs O(n)).
-        closest_candidate = &kOutputFileFormatFlag;
-        if (!strncmp(option_name, kOutputFileFormatFlag.c_str(),
-                     kOutputFileFormatFlag.size())) {
-          output_format_ = StrToOutputFormat(option_value);
-          break;
-        }
-        if (!strncmp(option_name, kOutputFilePathFlag.c_str(),
-                     kOutputFilePathFlag.size())) {
-          // TODO: verify that assignment operator does a deep copy.
-          output_file_path_ = option_value;
-          break;
-        }
+      if (!strncmp(option_name, kOutputFilePathFlag.c_str(),
+                   kOutputFilePathFlag.size())) {
+        // TODO: verify that assignment operator does a deep copy.
+        output_file_path_ = option_value;
+        break;
       }
-      default: {
-        if (closest_candidate) {
-          std::cout << "No flags matched for " << option_name << ". Maybe "
-                    << *closest_candidate << "?\n";
-        }
-        return 3;
+    }
+    default: {
+      if (closest_candidate) {
+        std::cout << "No flags matched for " << option_name << ". Maybe "
+                  << *closest_candidate << "?\n";
       }
+      return 3;
+    }
     }
     return 0;
   }
@@ -143,7 +141,7 @@ static BM::Options Config;
 // Depending on what values a machine's sysfs has, it'll make recommendations
 // to help improve benchmark predictions.
 class SystemCheck {
- public:
+public:
   std::string file_path;
   std::string want;
   std::string remedy;
@@ -162,8 +160,12 @@ class State {};
 typedef void(Function)(const BM::State &);
 
 class Benchmark {
- public:
+public:
   BM::Function *f;
+  std::string name = "";
+  uint64_t cpu_time = 0;
+  uint64_t wall_time = 0;
+  uint64_t iterations = 0;
 };
 
 static std::vector<BM::Benchmark *> RegisteredBenchmarks;
@@ -181,27 +183,27 @@ BM::Benchmark *Register(BM::Function *bm_f) {
 
 void Initialize(int argc, char **argv) {
   int status = 0;
+  Config.benchmark_binary_name_ = argv[0];
   for (int i = 1; i < argc; ++i) {
     status = BM::Config.InsertCliFlag(argv[i]);
     switch (status) {
-      case 1: {
-        std::cout << "Error with flag. Got " << argv[i]
-                  << ". Want form --{option_name}={option_value}\n";
-        break;
-      }
-      case 2: {
-        std::cout
-            << "Error with flag " << argv[i]
-            << ". Parsed flag value does not match flag's declared type\n";
-        break;
-      }
-      case 3: {
-        std::cout << "Error with flag " << argv[i] << "Unknown option_name\n";
-        break;
-      }
-      default: {
-        continue;
-      }
+    case 1: {
+      std::cout << "Error with flag. Got " << argv[i]
+                << ". Want form --{option_name}={option_value}\n";
+      break;
+    }
+    case 2: {
+      std::cout << "Error with flag " << argv[i]
+                << ". Parsed flag value does not match flag's declared type\n";
+      break;
+    }
+    case 3: {
+      std::cout << "Error with flag " << argv[i] << "Unknown option_name\n";
+      break;
+    }
+    default: {
+      continue;
+    }
     }
   }
   for (int i = 0; i < kSysfsChecks.size(); ++i) {
@@ -219,13 +221,13 @@ void Initialize(int argc, char **argv) {
     // are properly set. Perhaps we want to replace with some sort of global
     // --log_error or --log_verbosity=TESTING.
     if (Config.any_test_flag_set_) {
-      std::cout << "Checking sysfs@" << path << "\n";
+      std::cout << "Checking sysfs@" << path << '\n';
     }
     std::ifstream sys_file;
     sys_file.open(path, std::ios::in);
     if (!sys_file.is_open()) {
       if (Config.any_test_flag_set_) {
-        std::cout << "Failed to open " << path << "\n";
+        std::cout << "Failed to open " << path << '\n';
       }
       continue;
     }
@@ -241,17 +243,43 @@ void Initialize(int argc, char **argv) {
 void Run() {}
 
 void ShutDown() {
-  if (Config.output_format_ != Options::OutputFormat::kUnknown) {
-    std::cout << "Format: " << Options::OutputFormatToStr(Config.output_format_)
-              << ". ";
+  std::streambuf *output_buffer;
+  std::ofstream output_file;
+  if (!Config.output_file_path_.empty()) {
+    output_file.open(Config.output_file_path_);
+    output_buffer = output_file.rdbuf();
+  } else {
+    output_buffer = std::cout.rdbuf();
   }
-  // TODO: Write Benchmark out, passing the output_format option.
+  std::ostream out(output_buffer);
+  out << "Running benchmarks in " << Config.benchmark_binary_name_ << ". ";
+  if (Config.output_format_ != Options::OutputFormat::kUnknown) {
+    out << "Format: " << Options::OutputFormatToStr(Config.output_format_)
+        << ". ";
+  }
+  std::string delim = "";
+  switch (Config.output_format_) {
+  case (Options::OutputFormat::kText): {
+    delim = " : ";
+  }
+  default: {
+    break;
+  }
+  }
+  // TODO: change to table
+  // TODO: CSV, JSON format
+  for (const auto &b : RegisteredBenchmarks) {
+    out << "Name" << delim << b->name << '\n'
+        << "CPU Time" << delim << b->cpu_time << '\n'
+        << "Wall Time" << delim << b->wall_time << '\n'
+        << "Iterations" << delim << b->iterations << '\n';
+  }
   if (!Config.output_file_path_.empty()) {
     std::cout << "Generated " << Config.output_file_path_ << ". ";
   }
 }
 
-}  // namespace BM
+} // namespace BM
 
 // TODO: Args and Threads for BM. Will likely need to add void methods to
 // Benchmark class (or whatever BM::Register returns).
@@ -265,12 +293,12 @@ void ShutDown() {
 
 #define BM_Register(bm) static BM::Benchmark *BM_NAME(bm) = BM_REGISTER_(bm)
 
-#define BM_Main()                   \
-  int main(int argc, char **argv) { \
-    BM::Initialize(argc, argv);     \
-    BM::Run();                      \
-    BM::ShutDown();                 \
-    return 0;                       \
+#define BM_Main()                                                              \
+  int main(int argc, char **argv) {                                            \
+    BM::Initialize(argc, argv);                                                \
+    BM::Run();                                                                 \
+    BM::ShutDown();                                                            \
+    return 0;                                                                  \
   }
 
-#endif  // _BM_H_
+#endif // _BM_H_
