@@ -27,7 +27,7 @@ TESTS = [
          [""]),
     Test("TestTextToFileOutput", "--output_format=Text",
          "--output_file=results", ["Generated results"], "results",
-         ["Running benchmarks in", "Format: Text"]),
+         ["Running benchmarks in", "Format: Text", "BM_Example"]),
 ]
 
 

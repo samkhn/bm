@@ -1,4 +1,4 @@
-#include "bm.h"
+#include "bm.hpp"
 
 static void BM_Example(const BM::State &s) {}
 
