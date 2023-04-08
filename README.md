@@ -8,7 +8,7 @@ In development. Very much not ready. Check NOTES.txt for TODOs.
 ## Sample
 
 ```cpp
-#include "bm.h"
+#include "bm.hpp"
 
 #include <string>
 
@@ -32,8 +32,8 @@ $ ./bm --output_format=csv --output_file=benchmark.csv
 
 ## Requires
 
-- Intel or AMD x86 chipset
-- Linux (if you wish to add Windows, please add the appropriate header and include directives in bm.h and send a PR).
+- Intel or AMD x86 chipset with rdtsc in the ISA
+- Linux with sysfs
 - g++ or clang with at least C++11 and x86 intrinsics
 
 ## Development and Testing
@@ -46,9 +46,19 @@ Requires:
 
 ```bash
 $ cmake -B build -G Ninja -S .
-$ cmake --build build --target check_all
+$ cmake --build build --target check-all
 ```
 
 ### Flag testing
 
 If you are testing a flag, please add a Python script that passes the flag and gets expected output. Check check\_flags\_integration.py as an example.
+
+### Format and linting
+
+Requires clang-tidy and clang-format. Run
+
+```bash
+$ cmake --build build --target lint
+```
+
+Note: we ignore errors about exception throwing in namespaced variables. We don't care about exception safety in general.

@@ -10,9 +10,8 @@ set(CMAKE_CXX_STANDARD 11)
 add_library(bm INTERFACE)
 target_include_directories(bm INTERFACE .)
 
-# Formatting and linting. Use clang-format with Google C++ style
 add_custom_target(lint
-	clang-tidy -Wall -Werror -Wextra -Wpedantic -checks=cert-* --warnings-as-errors=* ${CMAKE_SOURCE_DIR}/bm.h
+	clang-tidy --format-style='Google' -checks=cert-* --warnings-as-errors=* ${CMAKE_SOURCE_DIR}/bm.hpp
 	DEPENDS bm
 )
 
