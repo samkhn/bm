@@ -68,10 +68,10 @@ class Options {
   // 3: Could not find option flag for the type
   // On correctly processing the flag and storing it in option, returns 0.
   int InsertCliFlag(char *argv) {
-    if (!argv && !(argv[0] == '-' && argv[1] == '-')) {
+    if (!argv || !(argv[0] == '-' && argv[1] == '-')) {
       return 1;
     }
-    if (*argv == '\0') {
+    if (argv && *argv == '\0') {
       return 0;
     }
     char *option_name = argv + 2;
