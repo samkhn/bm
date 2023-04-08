@@ -11,6 +11,7 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -158,27 +159,29 @@ class State {};
 
 typedef void(Function)(const BM::State &);
 
-class Benchmark {
- public:
-  BM::Function *f;
-  std::string name = "";
-  uint64_t cpu_time = 0;
-  uint64_t wall_time = 0;
-  uint64_t iterations = 0;
+struct Benchmark {
+  Benchmark(BM::Function *f, char *name) : f_(f), name_(name) {}
+  BM::Function *f_;
+  std::string name_ = "";
+  uint64_t cpu_time_ = 0;
+  uint64_t wall_time_ = 0;
+  uint64_t iterations_ = 0;
 };
 
-static std::vector<BM::Benchmark *> RegisteredBenchmarks;
+static std::vector<std::unique_ptr<BM::Benchmark>> RegisteredBenchmarks;
 
-BM::Benchmark *Register(char *bm_name, BM::Function *bm_f) {
-  BM::Benchmark *bm = new BM::Benchmark;
+int Register(char *bm_name, BM::Function *bm_f) {
+  if (!bm_name) {
+    std::cout << "Failed to register benchmark: No name passed\n";
+    return -1;
+  }
   if (!bm_f) {
     std::cout << "Failed to register benchmark: No benchmark passed\n";
-    return bm;
+    return -1;
   }
-  bm->f = bm_f;
-  bm->name = std::string(bm_name);
-  BM::RegisteredBenchmarks.push_back(bm);
-  return bm;
+  BM::RegisteredBenchmarks.push_back(
+      std::unique_ptr<BM::Benchmark>(new BM::Benchmark(bm_f, bm_name)));
+  return 0;
 }
 
 void Initialize(int argc, char **argv) {
@@ -271,10 +274,10 @@ void ShutDown() {
   // TODO: CSV, JSON format
   out << '\n';
   for (const auto &b : RegisteredBenchmarks) {
-    out << "Name" << delim << b->name << '\n'
-        << "CPU Time" << delim << b->cpu_time << '\n'
-        << "Wall Time" << delim << b->wall_time << '\n'
-        << "Iterations" << delim << b->iterations << '\n';
+    out << "Name" << delim << b->name_ << '\n'
+        << "CPU Time" << delim << b->cpu_time_ << '\n'
+        << "Wall Time" << delim << b->wall_time_ << '\n'
+        << "Iterations" << delim << b->iterations_ << '\n';
   }
   if (!Config.output_file_path_.empty()) {
     std::cout << "Generated " << Config.output_file_path_ << ". ";
@@ -289,11 +292,10 @@ void ShutDown() {
 // TODO: BM_Register(SomeBenchmark)->ArgRange(a, b)
 // TODO: BM_Register(SomeBenchmark)->ArgRange(a, b, jump)
 // TODO: BM_Register(SomeBenchmark)->Threads(a)
-#define BM_REGISTER_(bm) BM::Register(#bm, bm);
 
 #define BM_NAME(bm) benchmark_id_##__LINE__##bm
 
-#define BM_Register(bm) static BM::Benchmark *BM_NAME(bm) = BM_REGISTER_(bm)
+#define BM_Register(bm) static int BM_NAME(bm) = BM::Register(#bm, bm)
 
 #define BM_Main()                   \
   int main(int argc, char **argv) { \

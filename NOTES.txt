@@ -69,10 +69,6 @@ Use Google C++ style.
 
 TODO: ShutDown() to write results
 
-TODO: implement good tooling (-Wall, -Werror, -pedantic, -Wno-virtual-dtor, iwyu, clang-tidy, clang format in root, -fsanitize, test coverage)
-
-TODO: replace heap allocated raw pointers with unique_ptr
-
 TODO: Run() to execute and print results
 
 TODO: kernel might interrupt and bring thread back onto a diff core, causing a diff RDTSC that is smaller than original.
