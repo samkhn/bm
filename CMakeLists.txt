@@ -5,13 +5,15 @@ project(BM
 	DESCRIPTION "Header only nanosecond resolution C++ benchmarking library"
 	LANGUAGES CXX)
 
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
+
 set(CMAKE_CXX_STANDARD 11)
 
 add_library(bm INTERFACE)
 target_include_directories(bm INTERFACE .)
 
 add_custom_target(lint
-	clang-tidy --format-style='Google' -checks=cert-* --warnings-as-errors=* ${CMAKE_SOURCE_DIR}/bm.hpp
+	clang-tidy -p ${CMAKE_BUILD_DIR}/compile_commands.json --format-style='Google' -checks=cert-* --warnings-as-errors=* ${CMAKE_SOURCE_DIR}/bm.hpp
 	DEPENDS bm
 )
 

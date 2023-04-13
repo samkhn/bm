@@ -5,7 +5,7 @@ OBJ: targeted for benchmarking operations on thread safe data structures
 OBJ: exploit the highest resolution clock on Intel and AMD chipsets
 
 REQ: Intel and AMD x86
-REQ: C++ v >= 11
+REQ: C++, v >= 11
 REQ: header only. All a user needs to do is #include "bm.h"
 REQ: provide results that have locally minimized variance
 
@@ -21,17 +21,22 @@ ALT:  google/benchmark [https://github.com/google/benchmark]
 DIFF: overkill for small binaries
 ALT:  sheredom/ubench [https://github.com/sheredom/ubench.h]
 DIFF: uses linux clocks which loses resolution on ns if the underlying kernel isn't using rdtsc
- NOTE: check kernel's clock source by $ cat /sys/devices/system/clocksource/clocksource0/available_clocksource
+
+NOTE: check kernel's clock source by
+$ cat /sys/devices/system/clocksource/clocksource0/available_clocksource
 
 Example:
-static void BM_KMP(const BM::State& state) {
-	std::string space;
-	std::string query;
-	for (auto _ : state) {
-		KnuthMorrisPrattSearch(space, query);
-	}
+static void BM_memcpy(BM::Controller &c) {
+  char *src = new char[c.Arg(0)];
+  char *dst = new char[c.Arg(0)];
+  memset(src, 'x', c.Arg(0));
+  for (auto _ : c) {
+    memcpy(dst, src, c.Arg(0));
+  }
+  delete[] src;
+  delete[] dst;
 }
-BM_Register(BM_KMP);
+BM_Register(BM_memcpy)->Arg(8)->Arg(64)->Arg(512);
 BM_Main();
 
 TESTING
@@ -43,83 +48,50 @@ Use godbolt to verify that the correct machine instructions are being generated
 DESIGN NOTES
 central contiguous array of Benchmark structs
 add to it with BM_Register
-run benchmarks and store with BM_Main (will use flags to configure how it is run and where results are written to)
-
-vector<Benchmark*> bms;
-Run():
-	for b : bms
-		b.run()
-struct Benchmark {
-	Name  // default name or user modified name
-	Function // to run
-	RunningState {
-		args
-		iteration count
-	}
-	Result {
-		table of data that can be printed to ostream (where ostream can point to terminal device or file)
-		report name of benchmark_arg, cpu time, wall time, iterations
-	}
-}
+run benchmarks and store with BM_Main
+(will use flags to configure how it is run and where results are written to)
 
 FORMATTING:
 Use Google C++ style.
 
------
-
-TODO: ShutDown() to write results
+--------------------------------------------------------------------------------
 
 TODO: Run() to execute and print results
+controller is iterable and injects/extract information from the key benchmarkable region
+each iteration represents a new Arg or Thread
+we iterate once we have a result
+we have a result when we have gathered enough samples
+each sample we rdtsc to get how long that section took
+if negative, keep counter and warn user at the end if greater than zero.
+we stop collecting samples when:
+- running stddev or variance stops changing for some number of iterations?
+  the tsc sample equals our running average
+- minimum_time < cpu_time
+- 1|min_iter_count < iters < 1e9
+- 5*minimum_time < real_time
+we produce a results vector
+results store:
+- name + state (like any arg or thread)
+- cpu_time total (accumulation of rdtsc calls)
+- iterations (number of times we gathered samples)
+- cpu_time per iter estimate
+- wall_time
+- negative sample count (only if we encountered it). Warn the user if > 0.
 
-TODO: kernel might interrupt and bring thread back onto a diff core, causing a diff RDTSC that is smaller than original.
-	We need to discard those samples and warn the user.
-
-TODO: BM::State and RunState to capture execution (w/ support for for looping as in example)
-	NOTE: record at the first iteration of state and when you exit the loop
-	TODO: Add Args(A) and ArgRange(A-B)? To test how parameter size impacts benchmarks
-	TODO: Add Threads(N)? To test how multithread impacts benchmarks
-class State {
- public:
-  class iterator {
-   public:
-    iterator(RunState *ptr) : ptr_(ptr) {
-	  	// TODO: sample rdtsc here and add to appropriate section
-		}
-    iterator operator++() {
-      ++ptr_;
-      return *this;
-    }
-    bool operator!=(const iterator &other) const { return ptr_ != other.ptr_; }
-    const RunState &operator*() const { return *ptr_; }
-		~iterator() {
-			// TODO: sample rdtsc here
-		}
-
-   private:
-    RunState *ptr_;
-  };
-
- private:
-  unsigned len;
-  RunState *arr;
-
- public:
-  iterator begin() const { return iterator(arr); }
-  iterator end() const { return iterator(arr + len); }
-};
-
-TODO: warmup flag: if set high, it will warmup the code path before measuring --benchmark_warmup=true
+TODO: warmup flag:
+if set high, it will warmup the code path before measuring --benchmark_warmup=true
 
 TODO: random interleaving can reduce variation --benchmark_enable_random_interleaving=true
 
 TODO: specify non-zero repetition count --benchmark_repetitions=9
 
 TODO: decrease the per-repetition time --benchmark_min_time=0.1
-NOTE: BM_RUN() should run until we have some statistically significant results. Some heuristics:
-	running stddev or variance stops changing for some number of iterations?
-	minimum_time < cpu_time
-	1 < iters < 1e9
-	5*minimum_time < real_time
+
+TODO: Add Args(A) and ArgRange(A-B)? To test how parameter size impacts benchmarks
+c.Arg(0) and c.Arg(1) to access integers.
+MAYBE: need to pause timing within the critical section.
+
+TODO: Add Threads(N)? To test how multithread impacts benchmarks
 
 TODO: BM::DoNotOptimize(void *p);
 Escape and Clobber work together to trick the compiler into thinking we might globally use some data, thus it avoids optimizing it out
@@ -153,11 +125,9 @@ void benchmark() {
 	clobber();
 }
 
-IDEA: opportunities for functional paradigms, RAII?
+TODO: prevent reordering of instructions with fencing
+You can probably just use memory_order_acquire_release on some random atomic int?
 
-IDEA: fallback to chrono if rdtsc isn't available? Warn user about this.
-
-IDEA: prevent reordering of instructions with fencing
 e.g. Say we have uint8_t array;
 prevent clflush from being reordered by the CPU or the compiler in this direction w/
 _mm_mfence();
@@ -183,7 +153,16 @@ serialize __rdtsc with respect to trailing instructions
 _mm_lfence();
 msl = time2 - time1;
 
-IDEA: pin benchmark to a CPU to reduce variance. Make this a parameter to BM::State instead of a flag?
+TODO: suggesting pinning benchmark to a CPU to reduce variance.
+MAYBE? Make this a parameter to BM::State instead of a flag?
+
+TODO: check Linux scaling governor.
+
+TODO: check randomize virtual addressing space
+
+TODO: CSV and JSON output
+
+IDEA: fallback to chrono if rdtsc isn't available? Warn user about this.
 
 -----
 
