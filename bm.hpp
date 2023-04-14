@@ -112,6 +112,7 @@
 #include <sys/types.h>
 #include <x86intrin.h>
 
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -340,7 +341,7 @@ struct Benchmark {
 
 static std::vector<std::unique_ptr<BM::Benchmark>> RegisteredBenchmarks;
 
-int32_t Register(char *bm_name, BM::Function *bm_f) {
+static int32_t Register(char *bm_name, BM::Function *bm_f) {
   if (!bm_name) {
     std::cout << "Failed to register benchmark: No name passed\n";
     return -1;
@@ -354,7 +355,7 @@ int32_t Register(char *bm_name, BM::Function *bm_f) {
   return 0;
 }
 
-void Initialize(int argc, char **argv) {
+static void Initialize(int argc, char **argv) {
   uint32_t status = 0;
   Config.benchmark_binary_name_ = argv[0];
   for (int i = 1; i < argc; ++i) {
@@ -414,9 +415,9 @@ void Initialize(int argc, char **argv) {
   }
 }
 
-std::unordered_map<std::string, BM::Count> Results;
+static std::unordered_map<std::string, BM::Count> Results;
 
-void Run() {
+static void Run() {
   for (const auto &b : RegisteredBenchmarks) {
     if (!b) continue;
     b->f_(*b->controller_);
@@ -424,7 +425,7 @@ void Run() {
   }
 }
 
-void ShutDown() {
+static void ShutDown() {
   std::streambuf *output_buffer;
   std::ofstream output_file;
   if (!Config.output_file_path_.empty()) {
