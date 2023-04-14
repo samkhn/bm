@@ -332,7 +332,7 @@ class Controller {
 typedef void(Function)(BM::Controller &);
 
 struct Benchmark {
-  Benchmark(BM::Function *f, char *name) : f_(f), name_(name) {}
+  Benchmark(BM::Function *f, std::string &name) : f_(f), name_(name) {}
   std::string name_ = "";
   BM::Function *f_ = nullptr;
   std::unique_ptr<BM::Controller> controller_ =
@@ -341,11 +341,11 @@ struct Benchmark {
 
 static std::vector<std::unique_ptr<BM::Benchmark>> RegisteredBenchmarks;
 
-static int32_t Register(char *bm_name, BM::Function *bm_f) {
-  if (!bm_name) {
-    std::cout << "Failed to register benchmark: No name passed\n";
-    return -1;
-  }
+static int32_t Register(std::string bm_name, BM::Function *bm_f) {
+  // if (!bm_name) {
+  //   std::cout << "Failed to register benchmark: No name passed\n";
+  //   return -1;
+  // }
   if (!bm_f) {
     std::cout << "Failed to register benchmark: No benchmark passed\n";
     return -1;
