@@ -295,33 +295,60 @@ static const std::vector<BM::SystemCheck> kSysfsChecks{
 
 struct Experiment {
   Experiment(const std::string &name, uint64_t cpu_time, uint64_t wall_time,
-             uint64_t iterations)
+             uint64_t iterations, Experiment *next)
       : name_(name),
         cpu_time_(cpu_time),
         wall_time_(wall_time),
-        iterations_(iterations) {}
+        iterations_(iterations),
+        next_(next) {}
   std::string name_;
   uint64_t cpu_time_ = 0;
   uint64_t wall_time_ = 0;
   uint64_t iterations_ = 0;
+  Experiment *next_ = nullptr;
 };
 
 static std::vector<BM::Experiment> Results;
 
+struct ExperimentIterator {
+  const Experiment *current_experiment_;
+  ExperimentIterator() = default;
+  ExperimentIterator(Experiment *experiment) : current_experiment_(experiment) {
+    // Sample time here for wall clock
+  }
+  ~ExperimentIterator() {
+    // Sample time here for wall clock. Store end-begin.
+  }
+
+  ExperimentIterator operator++() {
+    // Only shift experiment pointer if we've gathered enough samples
+    return *this;
+  }
+
+  friend bool operator!=(const ExperimentIterator &left,
+                         const ExperimentIterator &right) {
+    return left.current_experiment_ != right.current_experiment_;
+  }
+};
+
 // TODO: replace vector with your own iterable type that abstracts Experiments
 struct Controller {
-  std::vector<Experiment> bm_nodes_;
-  std::vector<Experiment>::iterator begin() { return bm_nodes_.begin(); }
-  std::vector<Experiment>::iterator end() { return bm_nodes_.end(); }
+  Experiment *experiment_list_ = nullptr;
+
+  ExperimentIterator begin() { return ExperimentIterator(experiment_list_); }
+  ExperimentIterator end() { return ExperimentIterator(); }
+
   void ConstructExperiments(const std::string &name) {
-    bm_nodes_.push_back(Experiment{name, 0, 0, 0});
-  };
+    experiment_list_ = new Experiment(name, 0, 0, 0, nullptr);
+  }
 
   void WriteExperimentResults() {
-    for (const auto &b : bm_nodes_) {
-      Results.push_back(b);
+    Experiment *e = experiment_list_;
+    while (e) {
+      Results.push_back(*e);
+      e = e->next_;
     }
-  };
+  }
 };
 
 // -----------------------------------------------------------------------------
