@@ -1,5 +1,7 @@
 // BM, a small benchmarking library
 //
+// Warning: documentation may not be in sync with source.
+//
 // Example:
 // static void BM_memcpy(BM::Controller &c) {
 //   char *src = new char[c.Arg(0)];
@@ -113,6 +115,7 @@
 #include <x86intrin.h>
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
@@ -125,6 +128,24 @@
 
 namespace BM {
 
+namespace Internal {
+
+// -----------------------------------------------------------------------------
+// Library utilities
+// -----------------------------------------------------------------------------
+
+// Because this isn't available in C++11...
+template <typename T, typename... Args>
+std::unique_ptr<T> make_unique(Args &&...args) {
+  return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
+}
+
+}  // namespace Internal
+
+// -----------------------------------------------------------------------------
+// Flags and Config
+// -----------------------------------------------------------------------------
+
 static const std::string kOutputFileFormatFlag = "output_format";
 static const std::string kOutputFilePathFlag = "output_file";
 
@@ -134,6 +155,26 @@ static const std::string kTestRootDirFlag = "test_root_dir";
 // If set, system root will be test_root_dir. Used in testing procfs and sysfs
 // checks.
 
+enum class OutputFormat {
+  kUnknown,
+  kText,
+};
+static const std::vector<std::string> kOutputFormatTypes = {"Unknown", "Text"};
+
+// Parameter is a const char * because we usually get it from argv.
+static OutputFormat StrToOutputFormat(const char *output_format_string) {
+  if (!output_format_string) {
+    return OutputFormat::kUnknown;
+  }
+  if (strncmp("kT", output_format_string, 2)) {
+    return OutputFormat::kText;
+  }
+  return OutputFormat::kUnknown;
+}
+static std::string OutputFormatToStr(const OutputFormat &format) {
+  return kOutputFormatTypes.at(static_cast<size_t>(format));
+}
+
 // TODO: --benchmark_enable_random_interleaving=True (default is False)
 // TODO: --benchmark_warmup=True (default is False)
 // TODO: --benchmark_repetitions={unsigned int} (default is 1)
@@ -142,32 +183,7 @@ static const std::string kTestRootDirFlag = "test_root_dir";
 struct Options {
   // The name of the compiled binary that uses bm. Usually argv[0].
   std::string benchmark_binary_name_;
-
-  enum class OutputFormat {
-    kUnknown,
-    kText,
-  };
-  static OutputFormat StrToOutputFormat(const char *output_format_string) {
-    if (!output_format_string) {
-      return OutputFormat::kUnknown;
-    }
-    if (strncmp("kT", output_format_string, 2)) {
-      return OutputFormat::kText;
-    }
-    return OutputFormat::kUnknown;
-  }
-  static std::string OutputFormatToStr(const OutputFormat &format) {
-    switch (format) {
-      case Options::OutputFormat::kUnknown:
-        return "Unknown";
-      case Options::OutputFormat::kText:
-        return "Text";
-      default:
-        break;
-    }
-    return "";
-  }
-  OutputFormat output_format_ = Options::OutputFormat::kUnknown;
+  BM::OutputFormat output_format_ = BM::OutputFormat::kUnknown;
   std::string output_file_path_ = "";
 
   // Testing only flags
@@ -251,6 +267,10 @@ struct Options {
 //  Maybe move closest candidate check to here instead of in CLI parsing?
 static BM::Options Config;
 
+// -----------------------------------------------------------------------------
+// System Check
+// -----------------------------------------------------------------------------
+
 // SystemCheck is a store of sysfs files BM checks at runtime before benchmarks.
 // Depending on what values a machine's sysfs has, it'll make recommendations
 //  to help improve benchmark predictions.
@@ -269,88 +289,71 @@ static const std::vector<BM::SystemCheck> kSysfsChecks{
      "for more accurate results."},
 };
 
-struct Count {
+// -----------------------------------------------------------------------------
+// Control and telemetry
+// -----------------------------------------------------------------------------
+
+struct Experiment {
+  Experiment(const std::string &name, uint64_t cpu_time, uint64_t wall_time,
+             uint64_t iterations)
+      : name_(name),
+        cpu_time_(cpu_time),
+        wall_time_(wall_time),
+        iterations_(iterations) {}
+  std::string name_;
   uint64_t cpu_time_ = 0;
   uint64_t wall_time_ = 0;
   uint64_t iterations_ = 0;
 };
 
-namespace Internal {
+static std::vector<BM::Experiment> Results;
 
-// Because this isn't available in C++11...
-template <typename T, typename... Args>
-std::unique_ptr<T> make_unique(Args &&...args) {
-  return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
-}
-
-}  // namespace Internal
-
-// State is an object that injects and extracts information from a benchmarked
-// function.
-// TODO: AddState method appends to the linked list
-class Controller {
- public:
-  Controller *next_ = nullptr;
-  Count counters_;
-  Controller() = default;
-
-  // Make controller and iterable type.
-  class iterator {
-   public:
-    iterator() = default;
-    explicit iterator(const Controller *state) : current_(state) {
-      // sample rdtsc for total time purpose
-    }
-    iterator operator++() {
-      // We iterate if we have met the following conditions
-      // 1 or min iteration count < total iters < 1e9
-      // wall time > 5 * minimum time
-      // cpu time > minimum time
-      // time sample equals running average
-      current_ = current_->next_;
-      return *this;
-    }
-
-    bool operator!=(const iterator &other) {
-      return other.current_ != this->current_;
-    }
-
-    // TODO: nullptr check
-    const Controller &operator*() const { return *current_; }
-
-    ~iterator() {
-      // sample rdtsc here and diff to beginning timer
-    }
-
-   private:
-    const Controller *current_;
+// TODO: replace vector with your own iterable type that abstracts Experiments
+struct Controller {
+  std::vector<Experiment> bm_nodes_;
+  std::vector<Experiment>::iterator begin() { return bm_nodes_.begin(); }
+  std::vector<Experiment>::iterator end() { return bm_nodes_.end(); }
+  void ConstructExperiments(const std::string &name) {
+    bm_nodes_.push_back(Experiment{name, 0, 0, 0});
   };
-  iterator begin() const { return iterator(this); }
-  iterator end() const { return iterator(); }
+
+  void WriteExperimentResults() {
+    for (const auto &b : bm_nodes_) {
+      Results.push_back(b);
+    }
+  };
 };
+
+// -----------------------------------------------------------------------------
+// Initialization and registration
+// -----------------------------------------------------------------------------
 
 typedef void(Function)(BM::Controller &);
 
 struct Benchmark {
-  Benchmark(BM::Function *f, std::string &name) : f_(f), name_(name) {}
   std::string name_ = "";
-  BM::Function *f_ = nullptr;
-  std::unique_ptr<BM::Controller> controller_ =
-      BM::Internal::make_unique<BM::Controller>();
+  BM::Function *function_ = nullptr;
+  // Controller provides a handle to affect how the benchmark is ran.
+  BM::Controller controller_;
+
+  Benchmark(BM::Function *function, std::string &name)
+      : function_(function), name_(name) {}
+
+  // Populates experiments, following controller_'s configuration
+  void Setup() { controller_.ConstructExperiments(name_); }
+
+  // Writes Counters to results map
+  void TearDown() { controller_.WriteExperimentResults(); }
 };
 
-static std::vector<std::unique_ptr<BM::Benchmark>> RegisteredBenchmarks;
+static std::vector<std::unique_ptr<BM::Benchmark>> Benchmarks;
 
 static int32_t Register(std::string bm_name, BM::Function *bm_f) {
-  // if (!bm_name) {
-  //   std::cout << "Failed to register benchmark: No name passed\n";
-  //   return -1;
-  // }
   if (!bm_f) {
     std::cout << "Failed to register benchmark: No benchmark passed\n";
     return -1;
   }
-  BM::RegisteredBenchmarks.push_back(
+  BM::Benchmarks.push_back(
       BM::Internal::make_unique<BM::Benchmark>(bm_f, bm_name));
   return 0;
 }
@@ -392,7 +395,7 @@ static void Initialize(int argc, char **argv) {
       }
     }
     path.append(kSysfsChecks[i].file_path_);
-    // TODO: Refactor: any_test_flag_set_ is used during testing to see if flags
+    // TODO(REFACTOR): any_test_flag_set_ is used during testing to see if flags
     // are properly set. Perhaps we want to replace with some sort of global
     // --log_error or --log_verbosity=TESTING.
     if (Config.any_test_flag_set_) {
@@ -415,15 +418,25 @@ static void Initialize(int argc, char **argv) {
   }
 }
 
-static std::unordered_map<std::string, BM::Count> Results;
+// -----------------------------------------------------------------------------
+// Execution
+// -----------------------------------------------------------------------------
 
 static void Run() {
-  for (const auto &b : RegisteredBenchmarks) {
-    if (!b) continue;
-    b->f_(*b->controller_);
-    Results[b->name_] = b->controller_->counters_;
+  for (const auto &b : Benchmarks) {
+    if (!b) {
+      std::cerr << "INTERNAL ERROR: Registered benchmark missing function\n";
+      continue;
+    }
+    b->Setup();
+    b->function_(b->controller_);
+    b->TearDown();
   }
 }
+
+// -----------------------------------------------------------------------------
+// Output
+// -----------------------------------------------------------------------------
 
 static void ShutDown() {
   std::streambuf *output_buffer;
@@ -436,13 +449,12 @@ static void ShutDown() {
   }
   std::ostream out(output_buffer);
   out << "Running benchmarks in " << Config.benchmark_binary_name_ << ". ";
-  if (Config.output_format_ != Options::OutputFormat::kUnknown) {
-    out << "Format: " << Options::OutputFormatToStr(Config.output_format_)
-        << ". ";
+  if (Config.output_format_ != BM::OutputFormat::kUnknown) {
+    out << "Format: " << OutputFormatToStr(Config.output_format_) << ". ";
   }
   std::string delim = " ";
   switch (Config.output_format_) {
-    case (Options::OutputFormat::kText): {
+    case (BM::OutputFormat::kText): {
       delim = " : ";
     }
     default: {
@@ -452,12 +464,11 @@ static void ShutDown() {
   // TODO: change to table
   // TODO: CSV, JSON format
   out << '\n';
-  for (auto result_it = Results.begin(); result_it != Results.end();
-       ++result_it) {
-    out << "Name" << delim << result_it->first << '\n'
-        << "CPU Time" << delim << result_it->second.cpu_time_ << '\n'
-        << "Wall Time" << delim << result_it->second.wall_time_ << '\n'
-        << "Iterations" << delim << result_it->second.iterations_ << '\n';
+  for (const auto &r : Results) {
+    out << "Name" << delim << r.name_ << '\n'
+        << "CPU Time" << delim << r.cpu_time_ << '\n'
+        << "Wall Time" << delim << r.wall_time_ << '\n'
+        << "Iterations" << delim << r.iterations_ << '\n';
   }
   if (!Config.output_file_path_.empty()) {
     std::cout << "Generated " << Config.output_file_path_ << ". ";
@@ -465,6 +476,10 @@ static void ShutDown() {
 }
 
 }  // namespace BM
+
+// -----------------------------------------------------------------------------
+// Benchmark main API
+// -----------------------------------------------------------------------------
 
 // TODO: Args and Threads for BM.
 // TODO: BM_Register(SomeBenchmark)->Args(a)

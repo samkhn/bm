@@ -7,7 +7,7 @@ static void BM_Sample(BM::Controller &state) {}
 BM_Register(BM_Sample);
 
 int main() {
-  if (BM::RegisteredBenchmarks.size() != 1) {
+  if (BM::Benchmarks.size() != 1) {
     std::cout << "Test Register. Failed to register. Want success.\n";
     return -1;
   }
