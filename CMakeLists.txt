@@ -48,11 +48,11 @@ add_custom_target(check-output
 	DEPENDS test-output
 )
 
-add_executable(test-wall-time tests/test_wall_time.cc)
-target_link_libraries(test-wall-time PUBLIC bm)
-add_custom_target(check-wall-time
-  python3 ${CMAKE_SOURCE_DIR}/tests/test_wall_time_integration.py $<TARGET_FILE:test-wall-time>
-  DEPENDS test-wall-time
+add_executable(test-time tests/test_time.cc)
+target_link_libraries(test-time PUBLIC bm)
+add_custom_target(check-time
+  python3 ${CMAKE_SOURCE_DIR}/tests/test_time_integration.py $<TARGET_FILE:test-time>
+  DEPENDS test-time
 )
 
 add_custom_target(check-all
@@ -61,6 +61,6 @@ add_custom_target(check-all
 		check-flags
 		check-sysfs-scan
     check-output
-    check-wall-time
+    check-time
 )
 

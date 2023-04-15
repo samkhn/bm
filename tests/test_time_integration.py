@@ -15,7 +15,11 @@ class Test:
 TEST_COUNT = 1
 TESTS = [
     Test("TestNoOutputFlag",
-         ["BM_VecPush", "Wall Time [1-9]\\d* microseconds"],),
+         [
+          "BM_VecPush",
+          "CPU Time [1-9]\\d* reference cycles",
+          "Wall Time [1-9]\\d* milliseconds",
+         ],),
 ]
 
 
@@ -25,7 +29,7 @@ def test_output_flags():
               "Only one arg expected: path/to/executable")
         return -1
     binary_under_test = sys.argv[1]
-    print(f"Test Wall Time Integration. Using binary: {binary_under_test}")
+    print(f"Test Time Integration. Using binary: {binary_under_test}")
     passed = 0
     for t in TESTS:
         test_call = [binary_under_test]
@@ -40,7 +44,7 @@ def test_output_flags():
             print(f"stdout missing {missing}")
         else:
             passed += 1
-    print(f"Test Wall Time Integration. Passed {passed} out of {TEST_COUNT}")
+    print(f"Test Time Integration. Passed {passed} out of {TEST_COUNT}")
     return 0
 
 

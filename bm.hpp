@@ -112,6 +112,7 @@
 #define BM_H
 
 #include <bits/types/struct_timeval.h>
+#include <cpuid.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <x86intrin.h>
@@ -143,6 +144,12 @@ std::unique_ptr<T> make_unique(Args &&...args) {
 }
 
 }  // namespace Internal
+
+static inline int64_t ReadTSC() {
+  // call to cpuid ensures pipeline is flushed before reading the TSC register
+  __get_cpuid_max(0, nullptr);
+  return _rdtsc();
+}
 
 // -----------------------------------------------------------------------------
 // Flags and Config
@@ -299,26 +306,15 @@ struct Experiment {
   Experiment(const std::string &name) : name_(name) {}
   std::string name_;
   Experiment *next_ = nullptr;
-  uint64_t cpu_time_;
+  int64_t cpu_time_;
+  int64_t iterations_ = 1;
+  int64_t running_mean_ = 0;
   long start_wall_time_;
   long end_wall_time_;
-  uint64_t iterations_ = 0;
+  int64_t negative_sample_count_ = 0;
 };
 
-struct ExperimentResult {
-  ExperimentResult(const std::string &name, uint64_t cpu_time,
-                   uint64_t wall_time, uint64_t iterations)
-      : name_(name),
-        cpu_time_(cpu_time),
-        wall_time_(wall_time),
-        iterations_(iterations) {}
-  std::string name_;
-  uint64_t cpu_time_ = 0;
-  uint64_t wall_time_ = 0;
-  uint64_t iterations_ = 0;
-};
-
-static std::vector<BM::ExperimentResult> Results;
+static int64_t kMinIterations = 1000;
 
 struct ExperimentIterator {
   Experiment *previous_experiment_;
@@ -327,6 +323,7 @@ struct ExperimentIterator {
   ExperimentIterator() = default;
 
   ExperimentIterator(Experiment *experiment) : current_experiment_(experiment) {
+    current_experiment_->cpu_time_ = BM::ReadTSC();
     timeval time_check;
     gettimeofday(&time_check, nullptr);
     current_experiment_->start_wall_time_ =
@@ -334,7 +331,7 @@ struct ExperimentIterator {
   }
 
   ~ExperimentIterator() {
-    if (previous_experiment_ || current_experiment_) {
+    if (previous_experiment_) {
       timeval time_check;
       gettimeofday(&time_check, nullptr);
       previous_experiment_->end_wall_time_ =
@@ -351,10 +348,22 @@ struct ExperimentIterator {
     // - minimum_time < cpu_time
     // - 1|min_iter_count < iters < 1e9
     // - 5*minimum_time < real_time
-    current_experiment_->iterations_++;
+    int64_t tsc_now = BM::ReadTSC();
     if (current_experiment_) {
-      previous_experiment_ = current_experiment_;
-      current_experiment_ = current_experiment_->next_;
+      if (tsc_now < current_experiment_->cpu_time_) {
+        current_experiment_->negative_sample_count_++;
+      } else {
+        int64_t sample = tsc_now - current_experiment_->cpu_time_;
+        current_experiment_->iterations_++;
+        current_experiment_->running_mean_ +=
+            (sample - current_experiment_->running_mean_) /
+            current_experiment_->iterations_;
+        current_experiment_->cpu_time_ = BM::ReadTSC();
+        if (current_experiment_->iterations_ > kMinIterations) {
+          previous_experiment_ = current_experiment_;
+          current_experiment_ = current_experiment_->next_;
+        }
+      }
     }
     return *this;
   }
@@ -379,6 +388,25 @@ struct ExperimentIterator {
   }
 };
 
+struct ExperimentResult {
+  ExperimentResult(const Experiment *e) {
+    if (!e) return;
+    name_ = e->name_;
+    cpu_time_ = e->cpu_time_;
+    iterations_ = e->iterations_;
+    mean_ = e->running_mean_;
+    wall_time_ = e->end_wall_time_ - e->start_wall_time_;
+  }
+  std::string name_;
+  int64_t cpu_time_ = 0;
+  int64_t iterations_ = 0;
+  int64_t mean_ = 0;
+  int64_t wall_time_ = 0;
+  // TODO: Negative rdtsc counts
+};
+
+static std::vector<BM::ExperimentResult> Results;
+
 struct Controller {
   Experiment *experiment_list_ = nullptr;
 
@@ -392,9 +420,7 @@ struct Controller {
   void WriteExperimentResults() {
     Experiment *e = experiment_list_;
     while (e) {
-      Results.push_back(ExperimentResult(
-          e->name_, e->cpu_time_, e->end_wall_time_ - e->start_wall_time_,
-          e->iterations_));
+      Results.push_back(e);
       e = e->next_;
     }
   }
@@ -542,8 +568,8 @@ static void ShutDown() {
   out << '\n';
   for (const auto &r : Results) {
     out << "Name" << delim << r.name_ << '\n'
-        << "CPU Time" << delim << r.cpu_time_ << '\n'
-        << "Wall Time" << delim << r.wall_time_ << " microseconds\n"
+        << "CPU Time" << delim << r.mean_ << " reference cycles\n"
+        << "Wall Time" << delim << r.wall_time_ << " milliseconds\n"
         << "Iterations" << delim << r.iterations_ << '\n';
   }
   if (!Config.output_file_path_.empty()) {

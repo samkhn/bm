@@ -5,7 +5,7 @@ static void BM_VecPush(BM::Controller &c) {
   auto begin = c.begin();
   auto end = c.end();
   for (auto it = begin; it != end; ++it) {
-    for (int i = 0; i < 1000000; ++i) {
+    for (int i = 0; i < 1000; ++i) {
       v.push_back(i);
     };
   }
