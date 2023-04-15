@@ -111,6 +111,8 @@
 #ifndef BM_H
 #define BM_H
 
+#include <bits/types/struct_timeval.h>
+#include <sys/time.h>
 #include <sys/types.h>
 #include <x86intrin.h>
 
@@ -294,35 +296,81 @@ static const std::vector<BM::SystemCheck> kSysfsChecks{
 // -----------------------------------------------------------------------------
 
 struct Experiment {
-  Experiment(const std::string &name, uint64_t cpu_time, uint64_t wall_time,
-             uint64_t iterations, Experiment *next)
+  Experiment(const std::string &name) : name_(name) {}
+  std::string name_;
+  Experiment *next_ = nullptr;
+  uint64_t cpu_time_;
+  long start_wall_time_;
+  long end_wall_time_;
+  uint64_t iterations_ = 0;
+};
+
+struct ExperimentResult {
+  ExperimentResult(const std::string &name, uint64_t cpu_time,
+                   uint64_t wall_time, uint64_t iterations)
       : name_(name),
         cpu_time_(cpu_time),
         wall_time_(wall_time),
-        iterations_(iterations),
-        next_(next) {}
+        iterations_(iterations) {}
   std::string name_;
   uint64_t cpu_time_ = 0;
   uint64_t wall_time_ = 0;
   uint64_t iterations_ = 0;
-  Experiment *next_ = nullptr;
 };
 
-static std::vector<BM::Experiment> Results;
+static std::vector<BM::ExperimentResult> Results;
 
 struct ExperimentIterator {
-  const Experiment *current_experiment_;
+  Experiment *previous_experiment_;
+  Experiment *current_experiment_ = nullptr;
+
   ExperimentIterator() = default;
+
   ExperimentIterator(Experiment *experiment) : current_experiment_(experiment) {
-    // Sample time here for wall clock
+    timeval time_check;
+    gettimeofday(&time_check, nullptr);
+    current_experiment_->start_wall_time_ =
+        (long)time_check.tv_sec * 1000 + (long)time_check.tv_usec / 1000;
   }
+
   ~ExperimentIterator() {
-    // Sample time here for wall clock. Store end-begin.
+    if (previous_experiment_ || current_experiment_) {
+      timeval time_check;
+      gettimeofday(&time_check, nullptr);
+      previous_experiment_->end_wall_time_ =
+          (long)time_check.tv_sec * 1000 + (long)time_check.tv_usec / 1000;
+    }
   }
 
   ExperimentIterator operator++() {
     // Only shift experiment pointer if we've gathered enough samples
+    // Some heuristics
+    // - running stddev or variance stops changing for some number of
+    // iterations?
+    //   the tsc sample equals our running average
+    // - minimum_time < cpu_time
+    // - 1|min_iter_count < iters < 1e9
+    // - 5*minimum_time < real_time
+    current_experiment_->iterations_++;
+    if (current_experiment_) {
+      previous_experiment_ = current_experiment_;
+      current_experiment_ = current_experiment_->next_;
+    }
     return *this;
+  }
+
+  // Postfix increment
+  ExperimentIterator operator++(int) {
+    ExperimentIterator it = *this;
+    ++(*this);
+    return it;
+  }
+
+  Experiment *operator*() { return current_experiment_; }
+
+  friend bool operator==(const ExperimentIterator &left,
+                         const ExperimentIterator &right) {
+    return left.current_experiment_ == right.current_experiment_;
   }
 
   friend bool operator!=(const ExperimentIterator &left,
@@ -331,7 +379,6 @@ struct ExperimentIterator {
   }
 };
 
-// TODO: replace vector with your own iterable type that abstracts Experiments
 struct Controller {
   Experiment *experiment_list_ = nullptr;
 
@@ -339,13 +386,15 @@ struct Controller {
   ExperimentIterator end() { return ExperimentIterator(); }
 
   void ConstructExperiments(const std::string &name) {
-    experiment_list_ = new Experiment(name, 0, 0, 0, nullptr);
+    experiment_list_ = new Experiment{name};
   }
 
   void WriteExperimentResults() {
     Experiment *e = experiment_list_;
     while (e) {
-      Results.push_back(*e);
+      Results.push_back(ExperimentResult(
+          e->name_, e->cpu_time_, e->end_wall_time_ - e->start_wall_time_,
+          e->iterations_));
       e = e->next_;
     }
   }
@@ -494,7 +543,7 @@ static void ShutDown() {
   for (const auto &r : Results) {
     out << "Name" << delim << r.name_ << '\n'
         << "CPU Time" << delim << r.cpu_time_ << '\n'
-        << "Wall Time" << delim << r.wall_time_ << '\n'
+        << "Wall Time" << delim << r.wall_time_ << " microseconds\n"
         << "Iterations" << delim << r.iterations_ << '\n';
   }
   if (!Config.output_file_path_.empty()) {
