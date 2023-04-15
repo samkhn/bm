@@ -113,11 +113,12 @@
 
 #include <bits/types/struct_timeval.h>
 #include <cpuid.h>
+#include <math.h>
 #include <sys/time.h>
 #include <sys/types.h>
 #include <x86intrin.h>
 
-#include <chrono>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -304,25 +305,38 @@ static const std::vector<BM::SystemCheck> kSysfsChecks{
 
 struct Experiment {
   Experiment(const std::string &name) : name_(name) {}
-  std::string name_;
+  std::string name_ = "";
   Experiment *next_ = nullptr;
+  // CPU Time and Running mean are measured in CPU clock cycles, as returned by
+  // rdtsc. Please check your system CPU's manual/reference/programming guide
+  // for the relationship between advertised frequency and tsc frequency.
+  // TODO: add sysfs check for reference frequency and return nanosecond
+  //  measurement from that.
   int64_t cpu_time_;
   int64_t iterations_ = 1;
-  int64_t running_mean_ = 0;
+  // Statistics
+  int64_t mean_ = 0;
+  int64_t squared_distance_from_mean_ = 0;
+  int64_t variance_ = 0;
+  // Wall times are in milliseconds
   long start_wall_time_;
   long end_wall_time_;
   int64_t negative_sample_count_ = 0;
 };
 
-static int64_t kMinIterations = 1000;
+// All experiments are guarenteed to run at least kMinIterations times.
+static int64_t kMinIterations = 100;
+static int64_t kMaxIterations = 1000000000000;
 
 struct ExperimentIterator {
   Experiment *previous_experiment_;
-  Experiment *current_experiment_ = nullptr;
+  Experiment *current_experiment_;
 
   ExperimentIterator() = default;
 
   ExperimentIterator(Experiment *experiment) : current_experiment_(experiment) {
+    // We initialize cpu_time_ here to provide a basis for subsequent rdtsc
+    // samples
     current_experiment_->cpu_time_ = BM::ReadTSC();
     timeval time_check;
     gettimeofday(&time_check, nullptr);
@@ -331,7 +345,7 @@ struct ExperimentIterator {
   }
 
   ~ExperimentIterator() {
-    if (previous_experiment_) {
+    if (previous_experiment_ && !current_experiment_) {
       timeval time_check;
       gettimeofday(&time_check, nullptr);
       previous_experiment_->end_wall_time_ =
@@ -341,28 +355,35 @@ struct ExperimentIterator {
 
   ExperimentIterator operator++() {
     // Only shift experiment pointer if we've gathered enough samples
-    // Some heuristics
-    // - running stddev or variance stops changing for some number of
-    // iterations?
-    //   the tsc sample equals our running average
+    // TODO heuristics
     // - minimum_time < cpu_time
-    // - 1|min_iter_count < iters < 1e9
     // - 5*minimum_time < real_time
+    // We measure rdtsc before and after any statistics work to ensure library
+    // statistics work doesn't muddle user results.
     int64_t tsc_now = BM::ReadTSC();
-    if (current_experiment_) {
-      if (tsc_now < current_experiment_->cpu_time_) {
-        current_experiment_->negative_sample_count_++;
-      } else {
-        int64_t sample = tsc_now - current_experiment_->cpu_time_;
-        current_experiment_->iterations_++;
-        current_experiment_->running_mean_ +=
-            (sample - current_experiment_->running_mean_) /
-            current_experiment_->iterations_;
-        current_experiment_->cpu_time_ = BM::ReadTSC();
-        if (current_experiment_->iterations_ > kMinIterations) {
-          previous_experiment_ = current_experiment_;
-          current_experiment_ = current_experiment_->next_;
-        }
+    if (!current_experiment_) return *this;
+    // Discard negative samples
+    if (tsc_now < current_experiment_->cpu_time_) {
+      current_experiment_->negative_sample_count_++;
+      return *this;
+    }
+    int64_t sample = tsc_now - current_experiment_->cpu_time_;
+    int64_t delta = sample - current_experiment_->mean_;
+    current_experiment_->iterations_++;
+    current_experiment_->mean_ += delta / current_experiment_->iterations_;
+    int64_t delta2 = sample - current_experiment_->mean_;
+    current_experiment_->squared_distance_from_mean_ += delta * delta2;
+    current_experiment_->variance_ =
+        current_experiment_->squared_distance_from_mean_ /
+        current_experiment_->iterations_;
+    current_experiment_->cpu_time_ = BM::ReadTSC();
+    if (current_experiment_->iterations_ > kMinIterations) {
+      if (std::fabs(sample - current_experiment_->mean_) <
+              (1.96 * std::sqrt(current_experiment_->variance_ /
+                                current_experiment_->iterations_)) ||
+          (current_experiment_->iterations_ > kMaxIterations)) {
+        previous_experiment_ = current_experiment_;
+        current_experiment_ = current_experiment_->next_;
       }
     }
     return *this;
@@ -394,27 +415,32 @@ struct ExperimentResult {
     name_ = e->name_;
     cpu_time_ = e->cpu_time_;
     iterations_ = e->iterations_;
-    mean_ = e->running_mean_;
+    mean_ = e->mean_;
+    variance_ = e->variance_;
     wall_time_ = e->end_wall_time_ - e->start_wall_time_;
+    negative_sample_count_ = e->negative_sample_count_;
   }
   std::string name_;
   int64_t cpu_time_ = 0;
   int64_t iterations_ = 0;
   int64_t mean_ = 0;
+  int64_t variance_ = 0;
   int64_t wall_time_ = 0;
-  // TODO: Negative rdtsc counts
+  int64_t negative_sample_count_ = 0;
 };
 
 static std::vector<BM::ExperimentResult> Results;
 
 struct Controller {
+  Controller() = default;
+
   Experiment *experiment_list_ = nullptr;
 
   ExperimentIterator begin() { return ExperimentIterator(experiment_list_); }
   ExperimentIterator end() { return ExperimentIterator(); }
 
   void ConstructExperiments(const std::string &name) {
-    experiment_list_ = new Experiment{name};
+    experiment_list_ = new Experiment(name);
   }
 
   void WriteExperimentResults() {
@@ -438,8 +464,8 @@ struct Benchmark {
   // Controller provides a handle to affect how the benchmark is ran.
   BM::Controller controller_;
 
-  Benchmark(BM::Function *function, std::string &name)
-      : function_(function), name_(name) {}
+  Benchmark(const std::string &name, BM::Function *function)
+      : name_(name), function_(function) {}
 
   // Populates experiments, following controller_'s configuration
   void Setup() { controller_.ConstructExperiments(name_); }
@@ -448,20 +474,20 @@ struct Benchmark {
   void TearDown() { controller_.WriteExperimentResults(); }
 };
 
-static std::vector<std::unique_ptr<BM::Benchmark>> Benchmarks;
+static std::vector<BM::Benchmark> Benchmarks;
 
-static int32_t Register(std::string bm_name, BM::Function *bm_f) {
+static int32_t Register(const std::string &bm_name, BM::Function *bm_f) {
   if (!bm_f) {
     std::cout << "Failed to register benchmark: No benchmark passed\n";
     return -1;
   }
-  BM::Benchmarks.push_back(
-      BM::Internal::make_unique<BM::Benchmark>(bm_f, bm_name));
+  BM::Benchmarks.push_back(BM::Benchmark(bm_name, bm_f));
   return 0;
 }
 
 static void Initialize(int argc, char **argv) {
   uint32_t status = 0;
+
   Config.benchmark_binary_name_ = argv[0];
   for (int i = 1; i < argc; ++i) {
     status = BM::Config.InsertCliFlag(argv[i]);
@@ -525,14 +551,10 @@ static void Initialize(int argc, char **argv) {
 // -----------------------------------------------------------------------------
 
 static void Run() {
-  for (const auto &b : Benchmarks) {
-    if (!b) {
-      std::cerr << "INTERNAL ERROR: Registered benchmark missing function\n";
-      continue;
-    }
-    b->Setup();
-    b->function_(b->controller_);
-    b->TearDown();
+  for (auto &b : Benchmarks) {
+    b.Setup();
+    b.function_(b.controller_);
+    b.TearDown();
   }
 }
 
@@ -569,8 +591,13 @@ static void ShutDown() {
   for (const auto &r : Results) {
     out << "Name" << delim << r.name_ << '\n'
         << "CPU Time" << delim << r.mean_ << " reference cycles\n"
+        << "Variance" << delim << r.variance_ << " reference cycles\n"
+        << "StDev" << delim << std::sqrt(r.variance_) << " reference cycles\n"
         << "Wall Time" << delim << r.wall_time_ << " milliseconds\n"
         << "Iterations" << delim << r.iterations_ << '\n';
+    if (r.negative_sample_count_)
+      out << "Negative Sample Count" << delim << r.negative_sample_count_
+          << '\n';
   }
   if (!Config.output_file_path_.empty()) {
     std::cout << "Generated " << Config.output_file_path_ << ". ";
@@ -588,13 +615,14 @@ static void ShutDown() {
 // TODO: BM_Register(SomeBenchmark)->ArgRange(a, b)
 // TODO: BM_Register(SomeBenchmark)->ArgRange(a, b, jump)
 // TODO: BM_Register(SomeBenchmark)->Threads(a)
-//  Threads will require the construction of a ThreadManager that gets passed to
-//  BM::State during construction inside Run()
 
-// We use BM_NAME just so we can call BM::Register
+// We use BM_NAME just so we can call BM_Register via BM::Register
 #define BM_NAME(bm) bm##__LINE__
 
-#define BM_Register(bm) static int BM_NAME(bm) = BM::Register(#bm, bm)
+#define BM_STR(s) BM_STR_IMPL(s)
+#define BM_STR_IMPL(s) #s
+
+#define BM_Register(bm) static int BM_NAME(bm) = BM::Register(BM_STR(bm), bm)
 
 #define BM_Main()                   \
   int main(int argc, char **argv) { \

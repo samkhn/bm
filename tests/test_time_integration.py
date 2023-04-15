@@ -12,13 +12,14 @@ class Test:
     want_regexp_stdout: list[str]
 
 
+# WARNING: This test may be very flaky. Keep an eye out.
 TEST_COUNT = 1
 TESTS = [
     Test("TestNoOutputFlag",
          [
           "BM_VecPush",
           "CPU Time [1-9]\\d* reference cycles",
-          "Wall Time [1-9]\\d* milliseconds",
+          "Wall Time [0-9]\\d* milliseconds",
          ],),
 ]
 
