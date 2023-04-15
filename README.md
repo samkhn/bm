@@ -3,7 +3,7 @@
 Header only, nanosecond resolution, C++ microbenchmark library.
 
 ## Status
-In development. Very much not ready. Check NOTES.txt for TODOs.
+Prints mean, variance and std deviation of critical sections with rdtsc. However, doesn't allow for passing arguments to critical section via Controller, doesn't allow for threading via Controller, doesn't yet support lfence and DoNotOptimize(). Will add these as I or you need them.
 
 ## Sample
 
@@ -12,10 +12,10 @@ In development. Very much not ready. Check NOTES.txt for TODOs.
 
 #include <string>
 
-static void BM_KMP(const BM::State& state) {
+static void BM_KMP(BM::Controller& c) {
 	std::string space;
 	std::string query;
-	for (auto _ : state) {
+	for (auto _ : c) {
 		KnuthMorrisPrattSearch(space, query);
 	}
 }
@@ -34,7 +34,7 @@ $ ./bm --output_format=csv --output_file=benchmark.csv
 
 - Intel or AMD x86 chipset with rdtsc in the ISA
 - Linux with sysfs
-- g++ or clang with at least C++11 and x86 intrinsics
+- g++ or clang with at least C++11 and x86 intrinsics and support for pre-processor macros
 
 ## Development and Testing
 

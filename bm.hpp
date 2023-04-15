@@ -125,26 +125,11 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
-#include <memory>
 #include <string>
 #include <unordered_map>
 #include <vector>
 
 namespace BM {
-
-namespace Internal {
-
-// -----------------------------------------------------------------------------
-// Library utilities
-// -----------------------------------------------------------------------------
-
-// Because this isn't available in C++11...
-template <typename T, typename... Args>
-std::unique_ptr<T> make_unique(Args &&...args) {
-  return std::unique_ptr<T>(new T(std::forward<Args>(args)...));
-}
-
-}  // namespace Internal
 
 static inline int64_t ReadTSC() {
   // call to cpuid ensures pipeline is flushed before reading the TSC register
@@ -325,6 +310,8 @@ struct Experiment {
 };
 
 // All experiments are guarenteed to run at least kMinIterations times.
+// NOTE to user: the faster you expect the critical section to be, the higher
+// the number of iterations you should see.
 static int64_t kMinIterations = 100;
 static int64_t kMaxIterations = 1000000000000;
 
@@ -487,7 +474,6 @@ static int32_t Register(const std::string &bm_name, BM::Function *bm_f) {
 
 static void Initialize(int argc, char **argv) {
   uint32_t status = 0;
-
   Config.benchmark_binary_name_ = argv[0];
   for (int i = 1; i < argc; ++i) {
     status = BM::Config.InsertCliFlag(argv[i]);
