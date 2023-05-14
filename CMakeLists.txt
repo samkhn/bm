@@ -12,9 +12,20 @@ set(CMAKE_CXX_STANDARD 11)
 add_library(bm INTERFACE)
 target_include_directories(bm INTERFACE .)
 
-add_custom_target(lint
-	clang-tidy -p ${CMAKE_BUILD_DIR}/compile_commands.json --format-style='Google' -checks=cert-* --warnings-as-errors=* ${CMAKE_SOURCE_DIR}/bm.hpp
+add_custom_target(cpplint
+	clang-tidy -p ${CMAKE_BINARY_DIR}/compile_commands.json --format-style='Google' -checks=cert-* --warnings-as-errors=* ${CMAKE_SOURCE_DIR}/bm.hpp
 	DEPENDS bm
+)
+
+add_custom_target(pylint
+	python3 -m black ${CMAKE_SOURCE_DIR}/tests/*.py
+	DEPENDS bm
+)
+
+add_custom_target(lint
+	DEPENDS
+		cpplint
+		pylint
 )
 
 # Tests

@@ -131,7 +131,8 @@
 
 namespace BM {
 
-static inline int64_t ReadTSC() {
+// TODO: make pipeline flushing optional
+static int64_t ReadTSC() {
   // call to cpuid ensures pipeline is flushed before reading the TSC register
   __get_cpuid_max(0, nullptr);
   return _rdtsc();
@@ -143,12 +144,7 @@ static inline int64_t ReadTSC() {
 
 static const std::string kOutputFileFormatFlag = "output_format";
 static const std::string kOutputFilePathFlag = "output_file";
-
-// Testing only.
-// --test_root_dir: By default, benchmarking library assumes system root is '/'.
 static const std::string kTestRootDirFlag = "test_root_dir";
-// If set, system root will be test_root_dir. Used in testing procfs and sysfs
-// checks.
 
 enum class OutputFormat {
   kUnknown,
@@ -170,11 +166,12 @@ static std::string OutputFormatToStr(const OutputFormat &format) {
   return kOutputFormatTypes.at(static_cast<size_t>(format));
 }
 
-// TODO: --benchmark_enable_random_interleaving=True (default is False)
-// TODO: --benchmark_warmup=True (default is False)
-// TODO: --benchmark_repetitions={unsigned int} (default is 1)
-// TODO: --benchmark_min_time={unsigned float} (default is 0.1 seconds)
-// TODO: CSV and JSON output
+// TODO(CORE): --benchmark_enable_random_interleaving=True (default is False)
+// TODO(CORE): --benchmark_warmup=True (default is False)
+// TODO(CORE): --benchmark_repetitions={unsigned int} (default is 1)
+// TODO(CORE): --benchmark_min_time={unsigned float} (default is 0.1 seconds)
+// TODO(CORE): --output_format=CSV
+// TODO(CORE): --output_format=JSON
 struct Options {
   // The name of the compiled binary that uses bm. Usually argv[0].
   std::string benchmark_binary_name_;
@@ -182,10 +179,13 @@ struct Options {
   std::string output_file_path_ = "";
 
   // Testing only flags
-  bool any_test_flag_set_ = false;
+  // --test_root_dir: By default, benchmarking library assumes system root is
+  // '/'. If set, system root will be test_root_dir. Used in testing procfs and
+  // sysfs checks.
   std::string test_root_dir_ = "";
+  bool any_test_flag_set_ = false;
 
-  Options() = default;
+  Options() noexcept = default;
 
   // InsertCliFlag returns non zero value on error:
   // 1: Line doesn't match {--option_name=option_value}
@@ -229,8 +229,8 @@ struct Options {
       }
       case 'o': {
         // TODO(OPTIMIZATION): instead of strncmp, bump the char * by n
-        // characters to reach the first differing character. Address jump is
-        // slightly faster than 2 strncmp calls (O(1) vs O(n)).
+        //  characters to reach the first differing character. Address jump is
+        //  slightly faster than 2 strncmp calls (O(1) vs O(n)).
         closest_candidate = &kOutputFileFormatFlag;
         if (!strncmp(option_name, kOutputFileFormatFlag.c_str(),
                      kOutputFileFormatFlag.size())) {
@@ -239,7 +239,6 @@ struct Options {
         }
         if (!strncmp(option_name, kOutputFilePathFlag.c_str(),
                      kOutputFilePathFlag.size())) {
-          // TODO: verify that assignment operator does a deep copy.
           output_file_path_ = option_value;
           break;
         }
@@ -268,16 +267,16 @@ static BM::Options Config;
 
 // SystemCheck is a store of sysfs files BM checks at runtime before benchmarks.
 // Depending on what values a machine's sysfs has, it'll make recommendations
-//  to help improve benchmark predictions.
+// to help improve benchmark predictions.
 struct SystemCheck {
   std::string file_path_;
   std::string want_;
   std::string remedy_;
 };
 
-// TODO: add check for AMD x86 chip equivalent
-// TODO: add check for Linux scaling governor
-// TODO: add check for randomizing virtual address
+// TODO(?): add check for AMD x86 chip equivalent
+// TODO(CORE): add check for Linux scaling governor
+// TODO(CORE): add check for randomizing virtual address
 static const std::vector<BM::SystemCheck> kSysfsChecks{
     {"/sys/devices/system/cpu/intel_pstate/no_turbo", "1",
      "Warning: Chip power frequency scaling is on. Recommend turning it off "
@@ -289,13 +288,12 @@ static const std::vector<BM::SystemCheck> kSysfsChecks{
 // -----------------------------------------------------------------------------
 
 struct Experiment {
-  Experiment(const std::string &name) : name_(name) {}
-  std::string name_ = "";
+  std::string label_ = "";
   Experiment *next_ = nullptr;
   // CPU Time and Running mean are measured in CPU clock cycles, as returned by
   // rdtsc. Please check your system CPU's manual/reference/programming guide
   // for the relationship between advertised frequency and tsc frequency.
-  // TODO: add sysfs check for reference frequency and return nanosecond
+  // TODO(UI): add sysfs check for reference frequency and return nanosecond
   //  measurement from that.
   int64_t cpu_time_;
   int64_t iterations_ = 1;
@@ -306,12 +304,16 @@ struct Experiment {
   // Wall times are in milliseconds
   long start_wall_time_;
   long end_wall_time_;
+  // Negative samples may occur when a BM is interrupted and rescheduled on a
+  // different chip core.
   int64_t negative_sample_count_ = 0;
+
+  Experiment(const std::string &label) : label_(label) {}
 };
 
 // All experiments are guarenteed to run at least kMinIterations times.
 // NOTE to user: the faster you expect the critical section to be, the higher
-// the number of iterations you should see.
+//  the number of iterations you should see.
 static int64_t kMinIterations = 100;
 static int64_t kMaxIterations = 1000000000000;
 
@@ -340,9 +342,9 @@ struct ExperimentIterator {
     }
   }
 
+  // We only shift experiment pointer if we've gathered enough samples
   ExperimentIterator operator++() {
-    // Only shift experiment pointer if we've gathered enough samples
-    // TODO heuristics
+    // TODO(OPTIONAL): additional heuristics that might be useful
     // - minimum_time < cpu_time
     // - 5*minimum_time < real_time
     // We measure rdtsc before and after any statistics work to ensure library
@@ -376,8 +378,7 @@ struct ExperimentIterator {
     return *this;
   }
 
-  // Postfix increment
-  ExperimentIterator operator++(int) {
+  const ExperimentIterator operator++(int) {
     ExperimentIterator it = *this;
     ++(*this);
     return it;
@@ -399,7 +400,7 @@ struct ExperimentIterator {
 struct ExperimentResult {
   ExperimentResult(const Experiment *e) {
     if (!e) return;
-    name_ = e->name_;
+    name_ = e->label_;
     cpu_time_ = e->cpu_time_;
     iterations_ = e->iterations_;
     mean_ = e->mean_;
