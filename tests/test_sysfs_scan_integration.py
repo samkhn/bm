@@ -18,18 +18,26 @@ class Test:
 
 TEST_COUNT = 2
 TESTS = [
-    Test("TestSysFsIntelTurboOff",
-         "sys/devices/system/cpu/intel_pstate/no_turbo", "1", ""),
-    Test("TestSysFsIntelTurboOn",
-         "sys/devices/system/cpu/intel_pstate/no_turbo", "0",
-         "Chip power frequency scaling is on")
+    Test(
+        "TestSysFsIntelTurboOff",
+        "sys/devices/system/cpu/intel_pstate/no_turbo",
+        "1",
+        "",
+    ),
+    Test(
+        "TestSysFsIntelTurboOn",
+        "sys/devices/system/cpu/intel_pstate/no_turbo",
+        "0",
+        "Chip power frequency scaling is on",
+    ),
 ]
 
 
 def test_sysfs_scan():
-    if (len(sys.argv) != 2):
-        print("ERROR: wrong number of args. "
-              "Only one arg expected: path/to/executable")
+    if len(sys.argv) != 2:
+        print(
+            "ERROR: wrong number of args. " "Only one arg expected: path/to/executable"
+        )
         return -1
     binary_under_test = sys.argv[1]
     print(f"Test SysFS Scan Integration. Using binary: {binary_under_test}")
@@ -38,14 +46,16 @@ def test_sysfs_scan():
     for t in TESTS:
         test_file_loc = os.path.join(test_tmp_dir, t.sysfs_file)
         Path(test_file_loc).parent.mkdir(parents=True, exist_ok=True)
-        f = open(test_file_loc, 'w')
+        f = open(test_file_loc, "w")
         f.write(t.input)
         test_call = [binary_under_test] + ["--test_root_dir=" + test_tmp_dir]
         test_run = subprocess.run(test_call, capture_output=True)
         if t.want_output not in test_run.stdout.decode():
-            print(f"Failed test {t.name}."
-                  f" {test_call} got [{test_run.stdout.decode()}]."
-                  f" Did not contain [{t.want_output}].")
+            print(
+                f"Failed test {t.name}."
+                f" {test_call} got [{test_run.stdout.decode()}]."
+                f" Did not contain [{t.want_output}]."
+            )
         else:
             passed += 1
         f.close()
@@ -54,5 +64,5 @@ def test_sysfs_scan():
     return 0
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     test_sysfs_scan()

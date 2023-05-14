@@ -15,19 +15,22 @@ class Test:
 # WARNING: This test may be very flaky. Keep an eye out.
 TEST_COUNT = 1
 TESTS = [
-    Test("TestNoOutputFlag",
-         [
-          "BM_VecPush",
-          "CPU Time [1-9]\\d* reference cycles",
-          "Wall Time [0-9]\\d* milliseconds",
-         ],),
+    Test(
+        "TestNoOutputFlag",
+        [
+            "BM_VecPush",
+            "CPU Time [1-9]\\d* reference cycles",
+            "Wall Time [0-9]\\d* milliseconds",
+        ],
+    ),
 ]
 
 
 def test_output_flags():
     if len(sys.argv) != 2:
-        print("ERROR: wrong number of args. "
-              "Only one arg expected: path/to/executable")
+        print(
+            "ERROR: wrong number of args. " "Only one arg expected: path/to/executable"
+        )
         return -1
     binary_under_test = sys.argv[1]
     print(f"Test Time Integration. Using binary: {binary_under_test}")
